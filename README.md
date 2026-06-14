@@ -1,5 +1,6 @@
 <div align="center">
-  <img src="docs/banner.svg" alt="STATUSLINE — a 3-line micro-dashboard that lives in your Claude Code terminal" width="720">
+  <img src="docs/banner.png" alt="STATUSLINE" width="740">
+  <p><sub>⏺ &nbsp;&nbsp; a 3-line micro-dashboard that lives in your Claude Code terminal &nbsp;&nbsp; 🐿️</sub></p>
 </div>
 
 <div align="center">

@@ -26,18 +26,12 @@ A tiny, dependency-free status line for [Claude Code](https://docs.anthropic.com
 
 It reads only the JSON Claude Code already pipes to a status-line command. **No API calls, no transcript parsing, no dependencies** — just `node` and a few fast `git` calls.
 
-```text
-⏺  Claude Opus 4.8  ✦ high   ▕████████████░░░░░░░░▏ 61% · 610k/1M   │   +156 −23
-◷ 5h 58% ⇡3 · 1h47m left   │   7d 81% · 2d3h left
-📁 my-workspace ▸ my-project : main · ✚3 · ⇡2 · ↻3h ago · gh:me/my-project · PR #12 pending
-🐿️
-```
+<p align="center">
+  <img src="docs/statusline.png" alt="claude-code-statusline running in a Claude Code terminal" width="840">
+</p>
 
 > [!NOTE]
-> In a real terminal the context bar is a **live gradient** (blue → amber → red as it fills) and the launch-root name **shimmers** in your workspace colour. The block above is a flat preview.
-
-<!-- Add a real terminal recording here once you have one (VHS / asciinema):
-<p align="center"><img src="docs/demo.gif" alt="claude-code-statusline demo" width="760"></p> -->
+> The context bar is a live **blue → amber → red** fill and the launch-root name **shimmers** (an animated gradient) — a screenshot only catches one frame. Above is a real session in the personal workspace's cyan→mint.
 
 ---
 

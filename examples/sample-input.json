@@ -1,0 +1,22 @@
+{
+  "model": { "id": "claude-opus-4-8", "display_name": "Claude Opus 4.8" },
+  "effort": { "level": "high" },
+  "workspace": {
+    "current_dir": "C:/code/my-project",
+    "project_dir": "C:/Users/you/my-workspace",
+    "repo": { "host": "github.com", "owner": "you", "name": "my-project" }
+  },
+  "context_window": {
+    "total_input_tokens": 608000,
+    "total_output_tokens": 2000,
+    "context_window_size": 1000000,
+    "used_percentage": 61
+  },
+  "cost": { "total_cost_usd": 1.23, "total_lines_added": 156, "total_lines_removed": 23 },
+  "rate_limits": {
+    "five_hour": { "used_percentage": 58, "resets_at": 1781215972 },
+    "seven_day": { "used_percentage": 81, "resets_at": 1781393152 }
+  },
+  "pr": { "number": 12, "url": "https://github.com/you/my-project/pull/12", "review_state": "pending" },
+  "cwd": "C:/code/my-project"
+}

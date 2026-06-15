@@ -27,6 +27,7 @@
 
 "use strict";
 const { execSync } = require("child_process");
+const crypto = require("node:crypto");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
@@ -246,6 +247,30 @@ function limitSeg(label, win, windowLen) {
   return seg;
 }
 
+// ─── prompt hashing + cache I/O ───────────────────────────────────────────
+function promptHash(text) {
+  return crypto.createHash("sha1").update(String(text)).digest("hex").slice(0, 16);
+}
+function isNewPrompt(prompt, cache) {
+  if (!prompt) return false;
+  if (!cache || !cache.promptHash) return true;
+  return cache.promptHash !== promptHash(prompt);
+}
+function readCache(file) {
+  try { return JSON.parse(fs.readFileSync(file, "utf8")); } catch { return null; }
+}
+function writeCache(file, obj) {
+  try {
+    const tmp = `${file}.${process.pid}.tmp`;
+    fs.writeFileSync(tmp, JSON.stringify(obj));
+    fs.renameSync(tmp, file);
+  } catch { /* never throw from the status line */ }
+}
+module.exports.promptHash = promptHash;
+module.exports.isNewPrompt = isNewPrompt;
+module.exports.readCache = readCache;
+module.exports.writeCache = writeCache;
+
 // ─── line-4 dispatcher ────────────────────────────────────────────────────
 function renderLine4(cfg, soul, ctx, now) {
   const emoji = EMOJI[cfg.animal] || EMOJI.squirrel;
@@ -264,8 +289,6 @@ function renderLine4(cfg, soul, ctx, now) {
   return text ? truncate(`${emoji} ~ ${text}`, ctx.cols) : emoji;
 }
 module.exports.renderLine4 = renderLine4;
-
-const readCache = () => null; // TEMP stub — replaced by the real readCache in a later task
 
 // ─── main ──────────────────────────────────────────────────────────────────
 function main() {

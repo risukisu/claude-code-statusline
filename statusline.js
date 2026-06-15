@@ -46,6 +46,30 @@ const SOUL_FILE = (animal) => path.join(claudeDir(), "souls", `${animal}.md`);
 
 module.exports = {}; // extended by later tasks
 
+// ─── soul markdown parser ──────────────────────────────────────────────────
+function parseSoul(md) {
+  const out = { voice: "", rules: "", work: [], ambient: [], react: "" };
+  if (typeof md !== "string") return out;
+  let section = null;
+  const reactLines = [];
+  for (const raw of md.split("\n")) {
+    const line = raw.replace(/\r$/, "");
+    const h = line.match(/^##\s+(\w+)/);
+    if (h) { section = h[1].toLowerCase(); continue; }
+    const v = line.match(/^voice:\s*(.+)$/i); if (v) { out.voice = v[1].trim(); continue; }
+    const r = line.match(/^rules:\s*(.+)$/i); if (r) { out.rules = r[1].trim(); continue; }
+    if ((section === "work" || section === "ambient") && line.trim().startsWith("-")) {
+      const item = line.replace(/^\s*-\s+/, "").trim();
+      if (item) out[section].push(item);
+    } else if (section === "react") {
+      reactLines.push(line);
+    }
+  }
+  out.react = reactLines.join("\n").trim();
+  return out;
+}
+module.exports.parseSoul = parseSoul;
+
 // ─── ANSI helpers ──────────────────────────────────────────────────────────
 const ESC = "\x1b[";
 const RESET = ESC + "0m";

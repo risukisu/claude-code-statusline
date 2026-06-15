@@ -27,6 +27,24 @@
 
 "use strict";
 const { execSync } = require("child_process");
+const fs = require("node:fs");
+const os = require("node:os");
+const path = require("node:path");
+
+const EMOJI = { squirrel: "🐿️", fox: "🦊", turtle: "🐢" };
+const ANIMALS = ["squirrel", "fox", "turtle"];
+const MODES = ["off", "canned", "react"];
+const IDLE_AFTER_MS = 90_000;
+const AMBIENT_EVERY_MS = 30_000;
+const GEN_LOCK_MS = 30_000;
+const PROMPT_MAX = 500;
+
+const claudeDir = () => path.join(os.homedir(), ".claude");
+const CONFIG_FILE = () => path.join(claudeDir(), "statusline-soul.json");
+const CACHE_FILE = () => path.join(claudeDir(), "statusline-soul.cache.json");
+const SOUL_FILE = (animal) => path.join(claudeDir(), "souls", `${animal}.md`);
+
+module.exports = {}; // extended by later tasks
 
 // ─── ANSI helpers ──────────────────────────────────────────────────────────
 const ESC = "\x1b[";
@@ -181,6 +199,7 @@ function limitSeg(label, win, windowLen) {
 }
 
 // ─── main ──────────────────────────────────────────────────────────────────
+function main() {
 let raw = "";
 process.stdin.setEncoding("utf8");
 process.stdin.on("data", (c) => (raw += c));
@@ -277,3 +296,6 @@ process.stdin.on("end", () => {
   // — Line 4: the squirrel — placeholder, stuff lands here later —
   console.log("🐿️");
 });
+}
+
+if (require.main === module) main();

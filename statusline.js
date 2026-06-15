@@ -222,6 +222,27 @@ function limitSeg(label, win, windowLen) {
   return seg;
 }
 
+// ─── line-4 dispatcher ────────────────────────────────────────────────────
+function renderLine4(cfg, soul, ctx, now) {
+  const emoji = EMOJI[cfg.animal] || EMOJI.squirrel;
+  if (cfg.mode === "off") {
+    if (!ctx.hasConfig) return `${DIM}${emoji} · /animal to pick a companion${RESET}`;
+    return emoji;
+  }
+  if (!soul) return emoji; // soul file missing → degrade gracefully
+  let text = null;
+  if (cfg.mode === "react") {
+    const c = ctx.cache;
+    text = c && c.comment && now - c.ts < IDLE_AFTER_MS ? c.comment : pickAmbient(soul, now);
+  } else {
+    text = pickCanned(soul, ctx, now);
+  }
+  return text ? truncate(`${emoji} ~ ${text}`, ctx.cols) : emoji;
+}
+module.exports.renderLine4 = renderLine4;
+
+const readCache = () => null; // TEMP stub — replaced by the real readCache in a later task
+
 // ─── main ──────────────────────────────────────────────────────────────────
 function main() {
 let raw = "";
@@ -233,6 +254,18 @@ process.stdin.on("end", () => {
 
   const cols = parseInt(process.env.COLUMNS || "", 10) || 120;
   const barW = cols < 90 ? 12 : 20;
+
+  // — Animal companion setup —
+  const cfgFile = CONFIG_FILE();
+  const hasConfig = fs.existsSync(cfgFile);
+  const cfg = loadConfig(cfgFile);
+  let soul = null;
+  try { soul = cfg.mode === "off" ? null : parseSoul(fs.readFileSync(SOUL_FILE(cfg.animal), "utf8")); } catch {}
+  const line4 = (hasRepo, dirty) => renderLine4(cfg, soul, {
+    hasConfig, hasRepo, dirty,
+    contextPct: (d.context_window && d.context_window.used_percentage) || 0,
+    cols, cache: cfg.mode === "react" ? readCache(CACHE_FILE()) : null,
+  }, Date.now());
 
   // — Line 1 (session): model · effort · context bar · lines changed —
   const model = (d.model && d.model.display_name) || "Claude";
@@ -284,7 +317,7 @@ process.stdin.on("end", () => {
 
   if (!g) {
     console.log(`📁  ${folderDisp}${hereSeg}${sep}${DIM}no repo${RESET}`);
-    console.log("🐿️"); // — Line 4: the squirrel — room to grow
+    console.log(line4(false, 0));
     return;
   }
 
@@ -317,8 +350,8 @@ process.stdin.on("end", () => {
 
   console.log(line3);
 
-  // — Line 4: the squirrel — placeholder, stuff lands here later —
-  console.log("🐿️");
+  // — Line 4: animal companion —
+  console.log(line4(true, g.dirty));
 });
 }
 

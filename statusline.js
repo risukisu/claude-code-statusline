@@ -464,7 +464,7 @@ function generate() {
     const out = execFileSync("claude", buildGenArgs(sysFile), {
       input: String(prompt).slice(0, PROMPT_MAX),
       timeout: 20000, encoding: "utf8", stdio: ["pipe", "pipe", "ignore"],
-      shell: process.platform === "win32",
+      shell: process.platform === "win32", windowsHide: true,
     }).trim();
     const comment = (out.split("\n").filter(Boolean).pop() || "").trim();
     writeCache(CACHE_FILE(), { comment, ts: Date.now(), promptHash: promptHash(prompt), generating: 0 });
@@ -489,7 +489,7 @@ function maybeSpawnGenerator(transcriptPath) {
   });
   const { spawn } = require("node:child_process");
   const child = spawn(process.execPath, [__filename, "--gen"], {
-    detached: true, stdio: "ignore", env: { ...process.env, SOUL_TRANSCRIPT: transcriptPath },
+    detached: true, windowsHide: true, stdio: "ignore", env: { ...process.env, SOUL_TRANSCRIPT: transcriptPath },
   });
   child.unref();
 }

@@ -363,6 +363,7 @@ process.stdin.on("end", () => {
   }
 
   if (!g) {
+    if (cfg.mode === "react" && d.transcript_path) maybeSpawnGenerator(d.transcript_path);
     console.log(`📁  ${folderDisp}${hereSeg}${sep}${DIM}no repo${RESET}`);
     console.log(line4(false, 0));
     return;
@@ -398,6 +399,7 @@ process.stdin.on("end", () => {
   console.log(line3);
 
   // — Line 4: animal companion —
+  if (cfg.mode === "react" && d.transcript_path) maybeSpawnGenerator(d.transcript_path);
   console.log(line4(true, g.dirty));
 });
 }
@@ -436,4 +438,63 @@ module.exports.pickAmbient = pickAmbient;
 module.exports.pickCanned = pickCanned;
 module.exports.truncate = truncate;
 
-if (require.main === module) main();
+// ─── react mode generator ─────────────────────────────────────────────────
+
+function buildGenArgs(sysPromptFile) {
+  return [
+    "-p", "--safe-mode", "--no-session-persistence",
+    "--model", "haiku", "--append-system-prompt-file", sysPromptFile,
+  ];
+}
+module.exports.buildGenArgs = buildGenArgs;
+
+// Runs in the detached --gen child: generate one comment, write the cache, exit.
+// Cross-platform-safe: multi-line soul via a temp file; user prompt via stdin — never a shell arg.
+function generate() {
+  let sysFile;
+  try {
+    const cfg = loadConfig(CONFIG_FILE());
+    if (cfg.mode !== "react") return;
+    const soul = parseSoul(fs.readFileSync(SOUL_FILE(cfg.animal), "utf8"));
+    const prompt = latestUserPrompt(process.env.SOUL_TRANSCRIPT || "");
+    if (!prompt) return;
+    sysFile = path.join(os.tmpdir(), `soul-sys-${process.pid}.txt`);
+    fs.writeFileSync(sysFile, soul.react || "Reply with ONE short witty line (<= 80 chars).");
+    const { execFileSync } = require("node:child_process");
+    const out = execFileSync("claude", buildGenArgs(sysFile), {
+      input: String(prompt).slice(0, PROMPT_MAX),
+      timeout: 20000, encoding: "utf8", stdio: ["pipe", "pipe", "ignore"],
+      shell: process.platform === "win32",
+    }).trim();
+    const comment = (out.split("\n").filter(Boolean).pop() || "").trim();
+    writeCache(CACHE_FILE(), { comment, ts: Date.now(), promptHash: promptHash(prompt), generating: 0 });
+  } catch {
+    const c = readCache(CACHE_FILE());
+    if (c) { c.generating = 0; writeCache(CACHE_FILE(), c); }
+  } finally {
+    try { if (sysFile) fs.unlinkSync(sysFile); } catch {}
+  }
+}
+
+// Runs in the render process: fire the detached child at most once per new prompt.
+function maybeSpawnGenerator(transcriptPath) {
+  const cacheFile = CACHE_FILE();
+  const cache = readCache(cacheFile);
+  const prompt = latestUserPrompt(transcriptPath);
+  if (!isNewPrompt(prompt, cache)) return;
+  if (cache && cache.generating && Date.now() - cache.generating < GEN_LOCK_MS) return;
+  writeCache(cacheFile, {
+    comment: cache ? cache.comment : "", ts: cache ? cache.ts : 0,
+    promptHash: promptHash(prompt), generating: Date.now(),
+  });
+  const { spawn } = require("node:child_process");
+  const child = spawn(process.execPath, [__filename, "--gen"], {
+    detached: true, stdio: "ignore", env: { ...process.env, SOUL_TRANSCRIPT: transcriptPath },
+  });
+  child.unref();
+}
+
+if (require.main === module) {
+  if (process.argv.includes("--gen")) generate();
+  else main();
+}

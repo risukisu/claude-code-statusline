@@ -46,6 +46,30 @@ const SOUL_FILE = (animal) => path.join(claudeDir(), "souls", `${animal}.md`);
 
 module.exports = {}; // extended by later tasks
 
+// ─── transcript parser ─────────────────────────────────────────────────────
+function latestUserPrompt(transcriptPath) {
+  try {
+    const buf = fs.readFileSync(transcriptPath, "utf8");
+    const lines = buf.trim().split("\n");
+    for (let i = lines.length - 1; i >= 0; i--) {
+      let o; try { o = JSON.parse(lines[i]); } catch { continue; }
+      const msg = o.message || o;
+      const isUser = o.type === "user" || (msg && msg.role === "user");
+      if (!isUser || !msg) continue;
+      const c = msg.content;
+      if (typeof c === "string") return c.trim() || null;
+      if (Array.isArray(c)) {
+        const text = c.filter((b) => b && b.type === "text").map((b) => b.text).join(" ").trim();
+        if (text) return text;
+      }
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+module.exports.latestUserPrompt = latestUserPrompt;
+
 // ─── soul markdown parser ──────────────────────────────────────────────────
 function parseSoul(md) {
   const out = { voice: "", rules: "", work: [], ambient: [], react: "" };

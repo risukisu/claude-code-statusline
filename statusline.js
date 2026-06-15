@@ -298,4 +298,17 @@ process.stdin.on("end", () => {
 });
 }
 
+function loadConfig(file) {
+  try {
+    const c = JSON.parse(fs.readFileSync(file, "utf8"));
+    return {
+      mode: MODES.includes(c.mode) ? c.mode : "off",
+      animal: ANIMALS.includes(c.animal) ? c.animal : "squirrel",
+    };
+  } catch {
+    return { mode: "off", animal: "squirrel" };
+  }
+}
+module.exports.loadConfig = loadConfig;
+
 if (require.main === module) main();

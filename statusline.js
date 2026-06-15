@@ -335,4 +335,25 @@ function loadConfig(file) {
 }
 module.exports.loadConfig = loadConfig;
 
+// ─── hybrid line-selection cadence ────────────────────────────────────────
+function pickAmbient(soul, now) {
+  const list = soul.ambient.length ? soul.ambient : soul.work;
+  if (!list.length) return null;
+  return list[Math.floor(now / AMBIENT_EVERY_MS) % list.length];
+}
+function pickCanned(soul, ctx, now) {
+  const notable = (ctx.hasRepo && ctx.dirty > 0) || ctx.contextPct >= 70;
+  const list = notable && soul.work.length ? soul.work
+    : soul.ambient.length ? soul.ambient : soul.work;
+  if (!list.length) return null;
+  return list[Math.floor(now / AMBIENT_EVERY_MS) % list.length];
+}
+function truncate(text, cols) {
+  const max = Math.max(8, (cols || 120) - 4);
+  return text.length <= max ? text : text.slice(0, max - 1) + "…";
+}
+module.exports.pickAmbient = pickAmbient;
+module.exports.pickCanned = pickCanned;
+module.exports.truncate = truncate;
+
 if (require.main === module) main();

@@ -18,7 +18,7 @@
 
 A tiny, dependency-free status line for [Claude Code](https://docs.anthropic.com/en/docs/claude-code) that turns the empty bar at the bottom of your terminal into a glanceable dashboard: **which model + effort** you're on, **how much context** you've burned, **how close you are to your rate limits** (and whether you're burning them faster than the clock), and the **full git picture** of the repo you're in — branch, dirty files, ahead/behind, last sync, remote, and open PR.
 
-It reads only the JSON Claude Code already pipes to a status-line command. **No API calls, no transcript parsing, no dependencies** — just `node` and a few fast `git` calls.
+It reads only the JSON Claude Code already pipes to a status-line command. **No API calls, no dependencies** — just `node` and a few fast `git` calls. (The optional [animal companion](#animal-companion-optional) is the one part that can do more — and only in its opt-in *react* mode.)
 
 <p align="center">
   <img src="docs/statusline.png" alt="claude-code-statusline running in a Claude Code terminal" width="840">
@@ -35,6 +35,7 @@ It reads only the JSON Claude Code already pipes to a status-line command. **No 
 - [Install](#install)
 - [Try it without Claude Code](#try-it-without-claude-code)
 - [Customize — colour-code your workspaces](#customize--colour-code-your-workspaces)
+- [Animal companion (optional)](#animal-companion-optional)
 - [How it works](#how-it-works)
 - [Project structure](#project-structure)
 - [Troubleshooting](#troubleshooting)
@@ -89,7 +90,7 @@ Three lines, each with its own job.
 | `gh:me/my-project` | origin remote (`gh:` = github.com; other hosts show their domain) |
 | `PR #12 pending` | open PR number + review state (`approved` · `pending` · `changes requested` · `draft`) |
 
-> `Line 4` is a single 🐿️ — a deliberate placeholder, room to grow your own widget.
+> `Line 4` is your optional **animal companion** — off by default (just a 🐿️), or a squirrel/fox/turtle that reacts to your work. See [Animal companion](#animal-companion-optional).
 
 ---
 
@@ -177,6 +178,26 @@ Make it yours: edit the `match` regexes to your own root paths and pick any two 
 
 ---
 
+## Animal companion (optional)
+
+Line 4 can host a small **animal companion** that comments on your work. It's **off by default** — out of the box line 4 is just a quiet `🐿️`. Opt in and pick a character with `/animal`:
+
+| mode | line 4 | cost |
+|---|---|---|
+| **off** (default) | just the emoji | none |
+| **canned** | `🦊 ~ 14 files dirty and no commit. bold.` | none — rotates hand-written lines, keyed to your git/context state |
+| **react** | `🦊 ~ refactoring auth? try not to lock yourself out` | one quick Haiku call per prompt |
+
+Three souls ship in [`souls/`](souls/): 🐿️ **squirrel** (manic hoarder), 🦊 **fox** (sly, lightly sassy), 🐢 **turtle** (slow and patient). Each is a plain-markdown file with `work`, `ambient` (in-character musings shown when you're idle), and `react` sections — **edit them freely**.
+
+**Set it up:**
+1. Copy `souls/` to `~/.claude/souls/` and `commands/animal.md` to `~/.claude/commands/`.
+2. In Claude Code, run `/animal` to pick — e.g. `/animal fox` (canned) or `/animal fox react`. `/animal off` quiets it back to the emoji.
+
+> **React mode & your limits:** react mode runs `claude -p --safe-mode --model haiku` (~3s) on each prompt you submit — using your existing Claude Code login (no API key needed), but **counting toward your rate limits**, and sending your latest prompt to Haiku. It never blocks the status line: the call runs in a detached background process and line 4 shows the last result. `off` and `canned` make no model calls and read no transcript.
+
+---
+
 ## How it works
 
 Claude Code hands a status-line command a JSON blob on `stdin` describing the current session ([docs](https://docs.anthropic.com/en/docs/claude-code/statusline)). This script reads it and prints up to four lines. The fields it uses:
@@ -190,7 +211,7 @@ Claude Code hands a status-line command a JSON blob on `stdin` describing the cu
 | `workspace.project_dir` / `current_dir` | launch root (shimmer) vs. the repo you're in |
 | `pr` | the PR badge |
 
-Everything git-related comes from a couple of `git --no-optional-locks` calls in the current directory (capped, never throws). **No network, no API keys, no transcript reads** — it stays well under ~100 ms.
+Everything git-related comes from a couple of `git --no-optional-locks` calls in the current directory (capped, never throws). By default — **no network, no API keys, no transcript reads** — it stays well under ~100 ms. The optional animal companion's *react* mode is the sole exception: it reads your latest prompt from the transcript and fires a background Haiku call, never on the render path (see [Animal companion](#animal-companion-optional)).
 
 The context bar's gradient is ported from [`getagentseal/codeburn`](https://github.com/getagentseal/codeburn). The launch-root shimmer is the same gradient technique you can watch standalone in [`extras/shimmer.ps1`](extras/shimmer.ps1).
 
@@ -207,6 +228,13 @@ claude-code-statusline/
 │   └── profile.ps1          # ccp / cca dual-workspace launchers
 ├── extras/
 │   └── shimmer.ps1          # standalone PowerShell gradient-shimmer demo
+├── souls/                   # the three animal companions — edit freely
+│   ├── squirrel.md
+│   ├── fox.md
+│   └── turtle.md
+├── commands/
+│   └── animal.md            # the /animal slash command
+├── test/                    # node:test suite (zero deps)
 ├── LICENSE                  # MIT
 └── README.md
 ```

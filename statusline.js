@@ -27,6 +27,73 @@
 
 "use strict";
 const { execSync } = require("child_process");
+const crypto = require("node:crypto");
+const fs = require("node:fs");
+const os = require("node:os");
+const path = require("node:path");
+
+const EMOJI = { squirrel: "🐿️", fox: "🦊", turtle: "🐢" };
+const ANIMALS = ["squirrel", "fox", "turtle"];
+const MODES = ["off", "canned", "react"];
+const IDLE_AFTER_MS = 90_000;
+const AMBIENT_EVERY_MS = 30_000;
+const GEN_LOCK_MS = 30_000;
+const PROMPT_MAX = 500;
+
+const claudeDir = () => path.join(os.homedir(), ".claude");
+const CONFIG_FILE = () => path.join(claudeDir(), "statusline-soul.json");
+const CACHE_FILE = () => path.join(claudeDir(), "statusline-soul.cache.json");
+const SOUL_FILE = (animal) => path.join(claudeDir(), "souls", `${animal}.md`);
+
+module.exports = {}; // extended by later tasks
+
+// ─── transcript parser ─────────────────────────────────────────────────────
+function latestUserPrompt(transcriptPath) {
+  try {
+    const buf = fs.readFileSync(transcriptPath, "utf8");
+    const lines = buf.trim().split("\n");
+    for (let i = lines.length - 1; i >= 0; i--) {
+      let o; try { o = JSON.parse(lines[i]); } catch { continue; }
+      const msg = o.message || o;
+      const isUser = o.type === "user" || (msg && msg.role === "user");
+      if (!isUser || !msg) continue;
+      const c = msg.content;
+      if (typeof c === "string") return c.trim() || null;
+      if (Array.isArray(c)) {
+        const text = c.filter((b) => b && b.type === "text").map((b) => b.text).join(" ").trim();
+        if (text) return text;
+      }
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+module.exports.latestUserPrompt = latestUserPrompt;
+
+// ─── soul markdown parser ──────────────────────────────────────────────────
+function parseSoul(md) {
+  const out = { voice: "", rules: "", work: [], ambient: [], react: "" };
+  if (typeof md !== "string") return out;
+  let section = null;
+  const reactLines = [];
+  for (const raw of md.split("\n")) {
+    const line = raw.replace(/\r$/, "");
+    const h = line.match(/^##\s+(\w+)/);
+    if (h) { section = h[1].toLowerCase(); continue; }
+    const v = line.match(/^voice:\s*(.+)$/i); if (v) { out.voice = v[1].trim(); continue; }
+    const r = line.match(/^rules:\s*(.+)$/i); if (r) { out.rules = r[1].trim(); continue; }
+    if ((section === "work" || section === "ambient") && line.trim().startsWith("-")) {
+      const item = line.replace(/^\s*-\s+/, "").trim();
+      if (item) out[section].push(item);
+    } else if (section === "react") {
+      reactLines.push(line);
+    }
+  }
+  out.react = reactLines.join("\n").trim();
+  return out;
+}
+module.exports.parseSoul = parseSoul;
 
 // ─── ANSI helpers ──────────────────────────────────────────────────────────
 const ESC = "\x1b[";
@@ -180,7 +247,51 @@ function limitSeg(label, win, windowLen) {
   return seg;
 }
 
+// ─── prompt hashing + cache I/O ───────────────────────────────────────────
+function promptHash(text) {
+  return crypto.createHash("sha1").update(String(text)).digest("hex").slice(0, 16);
+}
+function isNewPrompt(prompt, cache) {
+  if (!prompt) return false;
+  if (!cache || !cache.promptHash) return true;
+  return cache.promptHash !== promptHash(prompt);
+}
+function readCache(file) {
+  try { return JSON.parse(fs.readFileSync(file, "utf8")); } catch { return null; }
+}
+function writeCache(file, obj) {
+  try {
+    const tmp = `${file}.${process.pid}.tmp`;
+    fs.writeFileSync(tmp, JSON.stringify(obj));
+    fs.renameSync(tmp, file);
+  } catch { /* never throw from the status line */ }
+}
+module.exports.promptHash = promptHash;
+module.exports.isNewPrompt = isNewPrompt;
+module.exports.readCache = readCache;
+module.exports.writeCache = writeCache;
+
+// ─── line-4 dispatcher ────────────────────────────────────────────────────
+function renderLine4(cfg, soul, ctx, now) {
+  const emoji = EMOJI[cfg.animal] || EMOJI.squirrel;
+  if (cfg.mode === "off") {
+    if (!ctx.hasConfig) return `${DIM}${emoji} · /animal to pick a companion${RESET}`;
+    return emoji;
+  }
+  if (!soul) return emoji; // soul file missing → degrade gracefully
+  let text = null;
+  if (cfg.mode === "react") {
+    const c = ctx.cache;
+    text = c && c.comment && now - c.ts < IDLE_AFTER_MS ? c.comment : pickAmbient(soul, now);
+  } else {
+    text = pickCanned(soul, ctx, now);
+  }
+  return text ? truncate(`${emoji} ~ ${text}`, ctx.cols) : emoji;
+}
+module.exports.renderLine4 = renderLine4;
+
 // ─── main ──────────────────────────────────────────────────────────────────
+function main() {
 let raw = "";
 process.stdin.setEncoding("utf8");
 process.stdin.on("data", (c) => (raw += c));
@@ -190,6 +301,18 @@ process.stdin.on("end", () => {
 
   const cols = parseInt(process.env.COLUMNS || "", 10) || 120;
   const barW = cols < 90 ? 12 : 20;
+
+  // — Animal companion setup —
+  const cfgFile = CONFIG_FILE();
+  const hasConfig = fs.existsSync(cfgFile);
+  const cfg = loadConfig(cfgFile);
+  let soul = null;
+  try { soul = cfg.mode === "off" ? null : parseSoul(fs.readFileSync(SOUL_FILE(cfg.animal), "utf8")); } catch {}
+  const line4 = (hasRepo, dirty) => renderLine4(cfg, soul, {
+    hasConfig, hasRepo, dirty,
+    contextPct: (d.context_window && d.context_window.used_percentage) || 0,
+    cols, cache: cfg.mode === "react" ? readCache(CACHE_FILE()) : null,
+  }, Date.now());
 
   // — Line 1 (session): model · effort · context bar · lines changed —
   const model = (d.model && d.model.display_name) || "Claude";
@@ -240,8 +363,9 @@ process.stdin.on("end", () => {
   }
 
   if (!g) {
+    if (cfg.mode === "react" && d.transcript_path) maybeSpawnGenerator(d.transcript_path);
     console.log(`📁  ${folderDisp}${hereSeg}${sep}${DIM}no repo${RESET}`);
-    console.log("🐿️"); // — Line 4: the squirrel — room to grow
+    console.log(line4(false, 0));
     return;
   }
 
@@ -274,6 +398,103 @@ process.stdin.on("end", () => {
 
   console.log(line3);
 
-  // — Line 4: the squirrel — placeholder, stuff lands here later —
-  console.log("🐿️");
+  // — Line 4: animal companion —
+  if (cfg.mode === "react" && d.transcript_path) maybeSpawnGenerator(d.transcript_path);
+  console.log(line4(true, g.dirty));
 });
+}
+
+function loadConfig(file) {
+  try {
+    const c = JSON.parse(fs.readFileSync(file, "utf8"));
+    return {
+      mode: MODES.includes(c.mode) ? c.mode : "off",
+      animal: ANIMALS.includes(c.animal) ? c.animal : "squirrel",
+    };
+  } catch {
+    return { mode: "off", animal: "squirrel" };
+  }
+}
+module.exports.loadConfig = loadConfig;
+
+// ─── hybrid line-selection cadence ────────────────────────────────────────
+function pickAmbient(soul, now) {
+  const list = soul.ambient.length ? soul.ambient : soul.work;
+  if (!list.length) return null;
+  return list[Math.floor(now / AMBIENT_EVERY_MS) % list.length];
+}
+function pickCanned(soul, ctx, now) {
+  const notable = (ctx.hasRepo && ctx.dirty > 0) || ctx.contextPct >= 70;
+  const list = notable && soul.work.length ? soul.work
+    : soul.ambient.length ? soul.ambient : soul.work;
+  if (!list.length) return null;
+  return list[Math.floor(now / AMBIENT_EVERY_MS) % list.length];
+}
+function truncate(text, cols) {
+  const max = Math.max(8, (cols || 120) - 4);
+  return text.length <= max ? text : text.slice(0, max - 1) + "…";
+}
+module.exports.pickAmbient = pickAmbient;
+module.exports.pickCanned = pickCanned;
+module.exports.truncate = truncate;
+
+// ─── react mode generator ─────────────────────────────────────────────────
+
+function buildGenArgs(sysPromptFile) {
+  return [
+    "-p", "--safe-mode", "--no-session-persistence",
+    "--model", "haiku", "--system-prompt-file", sysPromptFile,
+  ];
+}
+module.exports.buildGenArgs = buildGenArgs;
+
+// Runs in the detached --gen child: generate one comment, write the cache, exit.
+// Cross-platform-safe: multi-line soul via a temp file; user prompt via stdin — never a shell arg.
+function generate() {
+  let sysFile;
+  try {
+    const cfg = loadConfig(CONFIG_FILE());
+    if (cfg.mode !== "react") return;
+    const soul = parseSoul(fs.readFileSync(SOUL_FILE(cfg.animal), "utf8"));
+    const prompt = latestUserPrompt(process.env.SOUL_TRANSCRIPT || "");
+    if (!prompt) return;
+    sysFile = path.join(os.tmpdir(), `soul-sys-${process.pid}.txt`);
+    fs.writeFileSync(sysFile, soul.react || "Reply with ONE short witty line (<= 80 chars).");
+    const { execFileSync } = require("node:child_process");
+    const out = execFileSync("claude", buildGenArgs(sysFile), {
+      input: String(prompt).slice(0, PROMPT_MAX),
+      timeout: 20000, encoding: "utf8", stdio: ["pipe", "pipe", "ignore"],
+      shell: process.platform === "win32",
+    }).trim();
+    const comment = (out.split("\n").filter(Boolean).pop() || "").trim();
+    writeCache(CACHE_FILE(), { comment, ts: Date.now(), promptHash: promptHash(prompt), generating: 0 });
+  } catch {
+    const c = readCache(CACHE_FILE());
+    if (c) { c.generating = 0; writeCache(CACHE_FILE(), c); }
+  } finally {
+    try { if (sysFile) fs.unlinkSync(sysFile); } catch {}
+  }
+}
+
+// Runs in the render process: fire the detached child at most once per new prompt.
+function maybeSpawnGenerator(transcriptPath) {
+  const cacheFile = CACHE_FILE();
+  const cache = readCache(cacheFile);
+  const prompt = latestUserPrompt(transcriptPath);
+  if (!isNewPrompt(prompt, cache)) return;
+  if (cache && cache.generating && Date.now() - cache.generating < GEN_LOCK_MS) return;
+  writeCache(cacheFile, {
+    comment: cache ? cache.comment : "", ts: cache ? cache.ts : 0,
+    promptHash: promptHash(prompt), generating: Date.now(),
+  });
+  const { spawn } = require("node:child_process");
+  const child = spawn(process.execPath, [__filename, "--gen"], {
+    detached: true, stdio: "ignore", env: { ...process.env, SOUL_TRANSCRIPT: transcriptPath },
+  });
+  child.unref();
+}
+
+if (require.main === module) {
+  if (process.argv.includes("--gen")) generate();
+  else main();
+}

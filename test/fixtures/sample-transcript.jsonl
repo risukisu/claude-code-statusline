@@ -1,0 +1,4 @@
+{"type":"summary","summary":"x"}
+{"type":"user","message":{"role":"user","content":"first prompt"}}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"hi"}]}}
+{"type":"user","message":{"role":"user","content":[{"type":"text","text":"second prompt please"}]}}

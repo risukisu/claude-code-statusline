@@ -443,7 +443,7 @@ module.exports.truncate = truncate;
 function buildGenArgs(sysPromptFile) {
   return [
     "-p", "--safe-mode", "--no-session-persistence",
-    "--model", "haiku", "--append-system-prompt-file", sysPromptFile,
+    "--model", "haiku", "--system-prompt-file", sysPromptFile,
   ];
 }
 module.exports.buildGenArgs = buildGenArgs;

@@ -3,5 +3,15 @@
     "type": "command",
     "command": "node C:/Users/YOUR_USERNAME/.claude/statusline.js",
     "refreshInterval": 1
+  },
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "matcher": "",
+        "hooks": [
+          { "type": "command", "command": "node C:/Users/YOUR_USERNAME/.claude/statusline.js --hook", "timeout": 30 }
+        ]
+      }
+    ]
   }
 }

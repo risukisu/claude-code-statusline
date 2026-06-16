@@ -192,9 +192,10 @@ Three souls ship in [`souls/`](souls/): 🐿️ **squirrel** (manic hoarder), �
 
 **Set it up:**
 1. Copy `souls/` to `~/.claude/souls/` and `commands/animal.md` to `~/.claude/commands/`.
-2. In Claude Code, run `/animal` to pick — e.g. `/animal fox` (canned) or `/animal fox react`. `/animal off` quiets it back to the emoji.
+2. **For `react` mode only:** merge the `UserPromptSubmit` hook from [`settings.snippet.json`](settings.snippet.json) into `~/.claude/settings.json`, then restart Claude Code. The hook generates the comment — **once, when you submit a prompt**, scoped to that session. (`off`/`canned` don't need it.)
+3. In Claude Code, run `/animal` to pick — e.g. `/animal fox` (canned) or `/animal fox react`. `/animal off` quiets it back to the emoji.
 
-> **React mode & your limits:** react mode runs `claude -p --safe-mode --model haiku` (~3s) on each prompt you submit — using your existing Claude Code login (no API key needed), but **counting toward your rate limits**, and sending your latest prompt to Haiku. It never blocks the status line: the call runs in a detached background process and line 4 shows the last result. `off` and `canned` make no model calls and read no transcript.
+> **React mode & your limits:** react mode runs `claude -p --safe-mode --model haiku` (~3s) **once per prompt you submit**, fired by a `UserPromptSubmit` hook — using your existing Claude Code login (no API key needed), but **counting toward your rate limits**, and sending your latest prompt to Haiku. Each session is independent (its own cache), and a built-in burst cap (max ~20 generations per 2 minutes → a brief cooldown) stops it running away if anything misbehaves. It never blocks the status line: the call runs in a detached background process and line 4 shows the last result. `off` and `canned` make no model calls and read no transcript.
 
 ---
 

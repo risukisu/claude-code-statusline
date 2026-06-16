@@ -30,3 +30,8 @@ test("react falls back to ambient when comment is stale", () => {
     { ...base, hasConfig: true, cache }, 90_001);
   assert.match(out, /~ A/); // an ambient line, not "old"
 });
+test("react shows a resting note when the breaker is tripped (paused) and no fresh comment", () => {
+  const out = renderLine4({ mode: "react", animal: "squirrel" }, soul,
+    { ...base, hasConfig: true, cache: null, paused: true }, 0);
+  assert.match(out, /resting/);
+});

@@ -9,3 +9,6 @@ Thumbs.db
 **/*token*.json
 **/*secret*.json
 **/.env
+
+# Tooling artifacts
+.memsearch/

@@ -394,7 +394,6 @@ process.stdin.on("end", () => {
   }
 
   if (!g) {
-    if (cfg.mode === "react" && d.transcript_path) maybeSpawnGenerator(d.transcript_path);
     console.log(`📁  ${folderDisp}${hereSeg}${sep}${DIM}no repo${RESET}`);
     console.log(line4(false, 0));
     return;

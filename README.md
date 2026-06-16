@@ -280,7 +280,6 @@ Restart Claude Code, and double-check the `command` path is correct (on Windows,
 
 - Context-bar gradient ported from [getagentseal/codeburn](https://github.com/getagentseal/codeburn).
 - Built for [Claude Code](https://docs.anthropic.com/en/docs/claude-code) and the JSON it pipes to status-line commands.
-- Record your own demo GIF with [VHS](https://github.com/charmbracelet/vhs) by Charm.
 
 <div align="center">
 <sub>Made by <a href="https://github.com/risukisu">risu</a> · 🐿️</sub>

@@ -188,12 +188,16 @@ Line 4 can host a small **animal companion** that comments on your work. It's **
 | **canned** | `🦊 ~ 14 files dirty and no commit. bold.` | none — rotates hand-written lines, keyed to your git/context state |
 | **react** | `🦊 ~ refactoring auth? try not to lock yourself out` | one quick Haiku call per prompt |
 
-Three souls ship in [`souls/`](souls/): 🐿️ **squirrel** (manic hoarder), 🦊 **fox** (sly, lightly sassy), 🐢 **turtle** (slow and patient). Each is a plain-markdown file with `work`, `ambient` (in-character musings shown when you're idle), and `react` sections — **edit them freely**.
+Three souls ship in [`souls/`](souls/) — each a plain-markdown file with `work`, `ambient` (in-character musings shown when you're idle), and `react` sections you can **edit freely**:
+
+- 🐿️ **squirrel** — manic, enthusiastic hoarder; scattered, cheerful energy
+- 🦊 **fox** — clever and sly, with a little sass; efficiency-minded
+- 🐢 **turtle** — slow, patient, wise; gently talks you out of rushing
 
 **Set it up:**
 1. Copy `souls/` to `~/.claude/souls/` and `commands/animal.md` to `~/.claude/commands/`.
 2. **For `react` mode only:** merge the `UserPromptSubmit` hook from [`settings.snippet.json`](settings.snippet.json) into `~/.claude/settings.json`, then restart Claude Code. The hook generates the comment — **once, when you submit a prompt**, scoped to that session. (`off`/`canned` don't need it.)
-3. In Claude Code, run `/animal` to pick — e.g. `/animal fox` (canned) or `/animal fox react`. `/animal off` quiets it back to the emoji.
+3. In Claude Code, just run **`/animal`** — an interactive picker pops up to choose your companion and sentience level. (You can also pass them directly: `/animal fox react`, or `/animal off` to quiet it back to the emoji.)
 
 > **React mode & your limits:** react mode runs `claude -p --safe-mode --model haiku` (~3s) **once per prompt you submit**, fired by a `UserPromptSubmit` hook — using your existing Claude Code login (no API key needed), but **counting toward your rate limits**, and sending your latest prompt to Haiku. Each session is independent (its own cache), and a built-in burst cap (max ~20 generations per 2 minutes → a brief cooldown) stops it running away if anything misbehaves. It never blocks the status line: the call runs in a detached background process and line 4 shows the last result. `off` and `canned` make no model calls and read no transcript.
 

@@ -6,9 +6,15 @@ const { renderLine4 } = require("../statusline.js");
 const soul = { work: ["W0"], ambient: ["A0", "A1"], react: "", voice: "", rules: "" };
 const base = { hasRepo: true, dirty: 0, contextPct: 0, cols: 120, cache: null };
 
-test("no config → first-run nudge", () => {
-  const out = renderLine4({ mode: "off", animal: "squirrel" }, null, { ...base, hasConfig: false }, 0);
-  assert.match(out, /\/animal to pick a companion/);
+test("no config + command installed → restart-and-pick nudge", () => {
+  const out = renderLine4({ mode: "off", animal: "squirrel" }, null,
+    { ...base, hasConfig: false, hasCommand: true }, 0);
+  assert.match(out, /restart Claude Code, then \/animal/);
+});
+test("no config + command NOT installed → bare emoji (no dead nudge)", () => {
+  const out = renderLine4({ mode: "off", animal: "squirrel" }, null,
+    { ...base, hasConfig: false, hasCommand: false }, 0);
+  assert.strictEqual(out, "🐿️");
 });
 test("mode off with config → bare emoji", () => {
   const out = renderLine4({ mode: "off", animal: "fox" }, null, { ...base, hasConfig: true }, 0);

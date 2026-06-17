@@ -47,6 +47,7 @@ const sessionKey = (id) => (String(id || "default").replace(/[^a-zA-Z0-9_-]/g, "
 const CACHE_FILE = (id) => path.join(claudeDir(), `statusline-soul.${sessionKey(id)}.cache.json`);
 const BUDGET_FILE = () => path.join(claudeDir(), "statusline-soul.budget.json");
 const SOUL_FILE = (animal) => path.join(claudeDir(), "souls", `${animal}.md`);
+const COMMAND_FILE = () => path.join(claudeDir(), "commands", "animal.md");
 
 // Circuit breaker — machine-wide burst cap so a runaway can never drain the rate limit.
 const BURST_MAX = 20;             // this many generations…
@@ -301,7 +302,13 @@ module.exports.sessionKey = sessionKey;
 function renderLine4(cfg, soul, ctx, now) {
   const emoji = EMOJI[cfg.animal] || EMOJI.squirrel;
   if (cfg.mode === "off") {
-    if (!ctx.hasConfig) return `${DIM}${emoji} · /animal to pick a companion${RESET}`;
+    if (!ctx.hasConfig) {
+      // Only advertise /animal when the command is actually installed — a statusline-only
+      // install must not nudge toward a command that doesn't exist.
+      return ctx.hasCommand
+        ? `${DIM}${truncate(`${emoji} · restart Claude Code, then /animal to pick a companion`, ctx.cols)}${RESET}`
+        : emoji;
+    }
     return emoji;
   }
   if (!soul) return emoji; // soul file missing → degrade gracefully
@@ -333,12 +340,13 @@ process.stdin.on("end", () => {
   // — Animal companion setup (render is READ-ONLY: it never spawns a generation) —
   const cfgFile = CONFIG_FILE();
   const hasConfig = fs.existsSync(cfgFile);
+  const hasCommand = fs.existsSync(COMMAND_FILE());
   const cfg = loadConfig(cfgFile);
   let soul = null;
   try { soul = cfg.mode === "off" ? null : parseSoul(fs.readFileSync(SOUL_FILE(cfg.animal), "utf8")); } catch {}
   const nowMs = Date.now();
   const line4 = (hasRepo, dirty) => renderLine4(cfg, soul, {
-    hasConfig, hasRepo, dirty,
+    hasConfig, hasCommand, hasRepo, dirty,
     contextPct: (d.context_window && d.context_window.used_percentage) || 0,
     cols,
     cache: cfg.mode === "react" ? readCache(CACHE_FILE(d.session_id)) : null,

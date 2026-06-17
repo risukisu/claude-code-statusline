@@ -1,6 +1,6 @@
 <div align="center">
   <img src="docs/banner.png" alt="STATUSLINE" width="740">
-  <p><sub>⏺ &nbsp;&nbsp; a 3-line micro-dashboard that lives in your Claude Code terminal &nbsp;&nbsp; 🐿️</sub></p>
+  <p><sub>⏺ &nbsp;&nbsp; a 4-line micro-dashboard that lives in your Claude Code terminal &nbsp;&nbsp; 🐿️</sub></p>
 </div>
 
 <div align="center">
@@ -18,7 +18,7 @@
 
 A tiny, dependency-free status line for [Claude Code](https://docs.anthropic.com/en/docs/claude-code) that turns the empty bar at the bottom of your terminal into a glanceable dashboard: **which model + effort** you're on, **how much context** you've burned, **how close you are to your rate limits** (and whether you're burning them faster than the clock), and the **full git picture** of the repo you're in — branch, dirty files, ahead/behind, last sync, remote, and open PR.
 
-It reads only the JSON Claude Code already pipes to a status-line command. **No API calls, no dependencies** — just `node` and a few fast `git` calls. (The optional [animal companion](#animal-companion-optional) is the one part that can do more — and only in its opt-in *react* mode.)
+It reads only the JSON Claude Code already pipes to a status-line command. **No API calls, no dependencies** — just `node` and a few fast `git` calls. **Lines 1–3 read no transcript.** The optional [animal companion](#animal-companion-optional) (line 4) is off by default; its opt-in *react* mode can read your transcript to generate context-aware reactions.
 
 <p align="center">
   <img src="docs/statusline.png" alt="claude-code-statusline running in a Claude Code terminal" width="840">
@@ -45,7 +45,7 @@ It reads only the JSON Claude Code already pipes to a status-line command. **No 
 
 ## What it shows
 
-Three lines, each with its own job.
+Four lines, each with its own job.
 
 ### `Line 1` — session
 
@@ -96,16 +96,30 @@ Three lines, each with its own job.
 
 ## Install
 
-**Prerequisite:** [Node.js](https://nodejs.org) on your `PATH` (any recent version) and a truecolor terminal.
+**Prerequisite:** [Node.js](https://nodejs.org) on your `PATH`, and a **truecolor (24-bit) terminal** — Windows Terminal, iTerm2, WezTerm, or the VS Code terminal. (macOS **Terminal.app** and the classic Windows `cmd.exe` are *not* truecolor and will garble the colours.)
 
-**1. Drop `statusline.js` into your Claude config folder.**
+### Easiest: let your agent install it
+
+This is a Claude Code tool, so the simplest install is to let Claude do it. Point Claude Code at this repo and say:
+
+> install this status line on my machine
+
+Claude reads [`AGENTS.md`](AGENTS.md) and copies every piece into `~/.claude/` — the dashboard, the `souls/`, the `/animal` command, and the hook — then tells you to restart. That's it.
+
+### Manual install
+
+Clone the repo and copy the pieces into your Claude config folder:
 
 <details open>
 <summary><b>macOS / Linux</b></summary>
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/risukisu/claude-code-statusline/main/statusline.js \
-  -o ~/.claude/statusline.js
+git clone https://github.com/risukisu/claude-code-statusline.git
+cd claude-code-statusline
+mkdir -p ~/.claude/souls ~/.claude/commands
+cp statusline.js      ~/.claude/statusline.js
+cp souls/*.md         ~/.claude/souls/
+cp commands/animal.md ~/.claude/commands/
 ```
 </details>
 
@@ -113,12 +127,16 @@ curl -fsSL https://raw.githubusercontent.com/risukisu/claude-code-statusline/mai
 <summary><b>Windows (PowerShell)</b></summary>
 
 ```powershell
-irm https://raw.githubusercontent.com/risukisu/claude-code-statusline/main/statusline.js `
-  -OutFile $HOME\.claude\statusline.js
+git clone https://github.com/risukisu/claude-code-statusline.git
+Set-Location claude-code-statusline
+New-Item -ItemType Directory -Force "$HOME\.claude\souls","$HOME\.claude\commands" | Out-Null
+Copy-Item statusline.js      "$HOME\.claude\statusline.js"
+Copy-Item souls\*.md         "$HOME\.claude\souls\"
+Copy-Item commands\animal.md "$HOME\.claude\commands\"
 ```
 </details>
 
-**2. Register it** in `~/.claude/settings.json` (merge the block from [`settings.snippet.json`](settings.snippet.json)):
+Then **merge [`settings.snippet.json`](settings.snippet.json) into `~/.claude/settings.json`** — both the `statusLine` block and the `UserPromptSubmit` hook (the hook powers the companion's `react` mode; merge it in, don't overwrite existing hooks):
 
 ```json
 {
@@ -126,16 +144,19 @@ irm https://raw.githubusercontent.com/risukisu/claude-code-statusline/main/statu
     "type": "command",
     "command": "node ~/.claude/statusline.js",
     "refreshInterval": 1
+  },
+  "hooks": {
+    "UserPromptSubmit": [
+      { "matcher": "", "hooks": [ { "type": "command", "command": "node ~/.claude/statusline.js --hook", "timeout": 30 } ] }
+    ]
   }
 }
 ```
 
-> On **Windows**, use the full path (forward slashes are fine):
-> `"command": "node C:/Users/YOUR_USERNAME/.claude/statusline.js"`
->
-> `refreshInterval: 1` redraws once a second, which animates the workspace shimmer. Drop it if you'd rather not repaint every second.
+> On **Windows**, use the full path with forward slashes: `node C:/Users/YOUR_USERNAME/.claude/statusline.js` (and the `--hook` line too).
+> `refreshInterval: 1` redraws once a second to animate the workspace shimmer — drop it if you'd rather not repaint every second.
 
-**3. Restart Claude Code.** The dashboard appears at the bottom of the terminal.
+**Restart Claude Code.** The dashboard appears at the bottom; line 4 invites you to run **`/animal`** to pick a companion (optional — see [Animal companion](#animal-companion-optional)).
 
 ---
 
@@ -180,7 +201,7 @@ Make it yours: edit the `match` regexes to your own root paths and pick any two 
 
 ## Animal companion (optional)
 
-Line 4 can host a small **animal companion** that comments on your work. It's **off by default** — out of the box line 4 is just a quiet `🐿️`. Opt in and pick a character with `/animal`:
+Line 4 can host a small **animal companion** that comments on your work. It's **off by default** — no model calls until you opt in. Until you pick, line 4 invites you to run `/animal`; once you choose a character (or `off`), it settles in:
 
 | mode | line 4 | cost |
 |---|---|---|
@@ -194,10 +215,9 @@ Three souls ship in [`souls/`](souls/) — each a plain-markdown file with `work
 - 🦊 **fox** — clever and sly, with a little sass; efficiency-minded
 - 🐢 **turtle** — slow, patient, wise; gently talks you out of rushing
 
-**Set it up:**
-1. Copy `souls/` to `~/.claude/souls/` and `commands/animal.md` to `~/.claude/commands/`.
-2. **For `react` mode only:** merge the `UserPromptSubmit` hook from [`settings.snippet.json`](settings.snippet.json) into `~/.claude/settings.json`, then restart Claude Code. The hook generates the comment — **once, when you submit a prompt**, scoped to that session. (`off`/`canned` don't need it.)
-3. In Claude Code, just run **`/animal`** — an interactive picker pops up to choose your companion and sentience level. (You can also pass them directly: `/animal fox react`, or `/animal off` to quiet it back to the emoji.)
+**Pick a companion:** the [Install](#install) steps already placed the `souls/`, the `/animal` command, and the hook. Just run **`/animal`** in Claude Code — an interactive picker pops up to choose your companion and sentience level. (Or pass them directly: `/animal fox react`, or `/animal off` to quiet it back to the emoji.)
+
+> If `/animal` doesn't autocomplete, **restart Claude Code** — slash commands load at session start.
 
 > **React mode & your limits:** react mode runs `claude -p --safe-mode --model haiku` (~3s) **once per prompt you submit**, fired by a `UserPromptSubmit` hook — using your existing Claude Code login (no API key needed), but **counting toward your rate limits**, and sending your latest prompt to Haiku. Each session is independent (its own cache), and a built-in burst cap (max ~20 generations per 2 minutes → a brief cooldown) stops it running away if anything misbehaves. It never blocks the status line: the call runs in a detached background process and line 4 shows the last result. `off` and `canned` make no model calls and read no transcript.
 
@@ -227,7 +247,7 @@ The context bar's gradient is ported from [`getagentseal/codeburn`](https://gith
 ```text
 claude-code-statusline/
 ├── statusline.js            # the dashboard — drop in ~/.claude/
-├── settings.snippet.json    # the statusLine block to merge into settings.json
+├── settings.snippet.json    # statusLine + UserPromptSubmit hook to merge into settings.json
 ├── examples/
 │   ├── sample-input.json    # pipe this in to preview without Claude Code
 │   └── profile.ps1          # ccp / cca dual-workspace launchers
@@ -240,6 +260,8 @@ claude-code-statusline/
 ├── commands/
 │   └── animal.md            # the /animal slash command
 ├── test/                    # node:test suite (zero deps)
+├── AGENTS.md                # install playbook agents read when pointed at the repo
+├── CONTRIBUTING.md          # guide for working on the repo
 ├── LICENSE                  # MIT
 └── README.md
 ```

@@ -2,13 +2,24 @@ const { test } = require("node:test");
 const assert = require("node:assert");
 const { execFileSync } = require("node:child_process");
 const fs = require("node:fs");
+const os = require("node:os");
 const path = require("node:path");
 
 const ROOT = path.join(__dirname, "..");
 const SAMPLE = fs.readFileSync(path.join(ROOT, "examples/sample-input.json"), "utf8");
 
+// Point CLAUDE_CONFIG_DIR at a throwaway dir so the render's per-session caches
+// never touch the developer's real ~/.claude.
 function run(stdin) {
-  return execFileSync("node", ["statusline.js"], { cwd: ROOT, input: stdin, encoding: "utf8", timeout: 5000 });
+  const cfgDir = fs.mkdtempSync(path.join(os.tmpdir(), "slchar-"));
+  try {
+    return execFileSync("node", ["statusline.js"], {
+      cwd: ROOT, input: stdin, encoding: "utf8", timeout: 5000,
+      env: { ...process.env, CLAUDE_CONFIG_DIR: cfgDir },
+    });
+  } finally {
+    fs.rmSync(cfgDir, { recursive: true, force: true });
+  }
 }
 
 test("renders the session line with the model name", () => {

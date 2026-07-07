@@ -2,7 +2,7 @@
   "statusLine": {
     "type": "command",
     "command": "node C:/Users/YOUR_USERNAME/.claude/statusline.js",
-    "refreshInterval": 1
+    "refreshInterval": 10
   },
   "hooks": {
     "UserPromptSubmit": [

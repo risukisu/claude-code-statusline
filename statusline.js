@@ -19,8 +19,11 @@
  * describe the repo you're actually in — gh: reads its real `origin` remote.
  *
  * Install: save to ~/.claude/statusline.js and register in ~/.claude/settings.json:
- *   "statusLine": { "type": "command", "command": "node ~/.claude/statusline.js", "refreshInterval": 1 }
+ *   "statusLine": { "type": "command", "command": "node ~/.claude/statusline.js", "refreshInterval": 10 }
  *   (Windows: use the full path, e.g. node C:/Users/<you>/.claude/statusline.js)
+ *   refreshInterval is in SECONDS and runs IN ADDITION to event-driven renders (which
+ *   fire on every assistant message). Keep it ≥5: each render is a fresh node process,
+ *   so a low value multiplied across open sessions is a real process-spawn cost.
  *
  * Context-bar gradient ported from getagentseal/codeburn. MIT licensed.
  */
@@ -38,14 +41,26 @@ const MODES = ["off", "canned", "react"];
 const IDLE_AFTER_MS = 90_000;
 const AMBIENT_EVERY_MS = 30_000;
 const PROMPT_MAX = 500;
+// Render safety net. main() blocks on stdin 'end', but Claude Code cancels a
+// superseded render by orphaning the process WITHOUT closing stdin, so 'end'
+// may never fire — leaving the node process hung forever at 0% CPU. This caps a
+// render's life so an orphan self-terminates instead of accumulating. Overridable
+// via env for fast tests. (hook() has the same guard on line ~557.)
+const RENDER_WATCHDOG_MS = parseInt(process.env.STATUSLINE_WATCHDOG_MS || "", 10) || 8000;
 
-const claudeDir = () => path.join(os.homedir(), ".claude");
+// Honor Claude Code's CLAUDE_CONFIG_DIR (falls back to ~/.claude) so config, souls
+// and caches resolve to the real config dir — and tests can point it at a tmp dir.
+const claudeDir = () => process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), ".claude");
 const CONFIG_FILE = () => path.join(claudeDir(), "statusline-soul.json");
 // Per-session cache: keyed by session_id (present in BOTH the status-line stdin and the
 // UserPromptSubmit hook stdin) so no session can ever read or trigger another's generation.
 const sessionKey = (id) => (String(id || "default").replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 64) || "default");
 const CACHE_FILE = (id) => path.join(claudeDir(), `statusline-soul.${sessionKey(id)}.cache.json`);
 const BUDGET_FILE = () => path.join(claudeDir(), "statusline-soul.budget.json");
+// Per-session git snapshot cache — lets rapid successive renders skip the 4–5 git
+// subprocesses. Short TTL keeps dirty/ahead-behind counts responsive.
+const GIT_CACHE_FILE = (id) => path.join(claudeDir(), `statusline-git.${sessionKey(id)}.cache.json`);
+const GIT_CACHE_TTL_MS = parseInt(process.env.STATUSLINE_GIT_TTL_MS || "", 10) || 3000;
 const SOUL_FILE = (animal) => path.join(claudeDir(), "souls", `${animal}.md`);
 const COMMAND_FILE = () => path.join(claudeDir(), "commands", "animal.md");
 
@@ -204,6 +219,19 @@ function gitInfo(cwd) {
   return info;
 }
 
+// One-shot git read: everything line 3 needs, in ≤4 subprocess calls. Cached per
+// session so most renders reuse it instead of re-shelling out. `g` is null off-repo.
+function computeGitSnapshot(cwd) {
+  const g = gitInfo(cwd);
+  const topLevel = g ? git("rev-parse --show-toplevel", cwd) : cwd;
+  const branch = g
+    ? (g.branch === "(detached)" ? (git("rev-parse --short HEAD", cwd) || "detached") : g.branch)
+    : null;
+  const originUrl = g ? git("config --get remote.origin.url", cwd) : null;
+  return { g, topLevel, branch, originUrl };
+}
+module.exports.computeGitSnapshot = computeGitSnapshot;
+
 // ─── workspace-identity shimmer (port of feedback-shimmer.ps1) ─────────────
 // CSS stops: 0% c1 -> 40% c2 -> 60% c1 -> 100% c2, phase sweeps a full
 // cycle every 3s of wall clock — each status line refresh shows the next frame.
@@ -275,10 +303,17 @@ function writeCache(file, obj) {
     fs.renameSync(tmp, file);
   } catch { /* never throw from the status line */ }
 }
+// A per-session git snapshot may be reused only if it is for the same directory
+// (never show the wrong repo after a cd) and younger than the TTL. Renders that
+// hit a fresh cache skip all 4–5 git subprocesses.
+function gitCacheFresh(cache, cwd, now, ttlMs) {
+  return !!(cache && cache.cwd === cwd && typeof cache.gitTs === "number" && now - cache.gitTs < ttlMs);
+}
 module.exports.promptHash = promptHash;
 module.exports.isNewPrompt = isNewPrompt;
 module.exports.readCache = readCache;
 module.exports.writeCache = writeCache;
+module.exports.gitCacheFresh = gitCacheFresh;
 
 // ─── circuit breaker (pure) ───────────────────────────────────────────────
 // Given the recorded generation timestamps and `now`, decide whether one more
@@ -328,9 +363,14 @@ module.exports.renderLine4 = renderLine4;
 // ─── main ──────────────────────────────────────────────────────────────────
 function main() {
 let raw = "";
+// Never hang: if stdin never delivers EOF (cancelled/orphaned render), self-exit.
+const watchdog = setTimeout(() => process.exit(0), RENDER_WATCHDOG_MS);
+watchdog.unref();
 process.stdin.setEncoding("utf8");
 process.stdin.on("data", (c) => (raw += c));
+process.stdin.on("error", () => process.exit(0)); // broken pipe → don't linger
 process.stdin.on("end", () => {
+  clearTimeout(watchdog);
   let d = {};
   try { d = JSON.parse(raw); } catch { /* render with defaults */ }
 
@@ -392,11 +432,19 @@ process.stdin.on("end", () => {
   const launchDir = (d.workspace && d.workspace.project_dir) || cwd;
   const pal = ROOT_PALETTES.find((p) => p.match.test(launchDir));
   const folderDisp = pal ? shimmer(basename(launchDir), pal.c1, pal.c2) : `${BLUE}${basename(launchDir)}${RESET}`;
-  const g = gitInfo(cwd);
+  // Per-session git cache: reuse a fresh snapshot, else read git once and store it.
+  const gitCacheFile = GIT_CACHE_FILE(d.session_id);
+  let snap = readCache(gitCacheFile);
+  if (!gitCacheFresh(snap, cwd, nowMs, GIT_CACHE_TTL_MS)) {
+    const s = computeGitSnapshot(cwd);
+    snap = { cwd, gitTs: nowMs, g: s.g, topLevel: s.topLevel, branch: s.branch, originUrl: s.originUrl };
+    writeCache(gitCacheFile, snap);
+  }
+  const g = snap.g;
+  const topLevel = snap.topLevel;
 
   // where the session actually is, when it differs from the launch root
   let hereSeg = "";
-  const topLevel = g ? git("rev-parse --show-toplevel", cwd) : cwd;
   if (topLevel && norm(topLevel) !== norm(launchDir)) {
     hereSeg = ` ${FAINT}▸${RESET} ${WHITE}${basename(topLevel)}${RESET}`;
   }
@@ -407,14 +455,14 @@ process.stdin.on("end", () => {
     return;
   }
 
-  const branch = g.branch === "(detached)" ? (git("rev-parse --short HEAD", cwd) || "detached") : g.branch;
+  const branch = snap.branch;
   const isDefault = branch === "master" || branch === "main";
   const branchCol = isDefault ? WHITE : YELLOW;
   let line3 = `📁  ${folderDisp}${hereSeg} ${FAINT}:${RESET} ${branchCol}${branch}${RESET}`;
 
   if (g.dirty > 0) line3 += `${sep}${YELLOW}✚ ${g.dirty}${RESET}`;
 
-  const origin = parseRemote(git("config --get remote.origin.url", cwd));
+  const origin = parseRemote(snap.originUrl);
 
   if (!g.upstream) {
     line3 += `${sep}${origin ? `${YELLOW}unpushed branch${RESET}` : `${DIM}local only${RESET}`}`;
@@ -485,6 +533,22 @@ function buildGenArgs(sysPromptFile) {
 }
 module.exports.buildGenArgs = buildGenArgs;
 
+// child_process options for the `claude -p` gen call: bounded timeout, force-kill on
+// timeout (SIGTERM can be ignored), silenced stderr, prompt via stdin, recursion guard.
+function genExecOpts(prompt) {
+  return {
+    input: prompt,
+    timeout: parseInt(process.env.STATUSLINE_GEN_TIMEOUT_MS || "", 10) || 20000,
+    killSignal: "SIGKILL",
+    encoding: "utf8",
+    stdio: ["pipe", "pipe", "ignore"],
+    shell: process.platform === "win32",
+    windowsHide: true,
+    env: { ...process.env, CLAUDE_SOUL_GEN: "1" },
+  };
+}
+module.exports.genExecOpts = genExecOpts;
+
 // Runs in the detached --gen child: generate one comment, write the cache, exit.
 // Cross-platform-safe: multi-line soul via a temp file; user prompt via stdin — never a shell arg.
 function generate() {
@@ -510,13 +574,8 @@ function generate() {
     sysFile = path.join(os.tmpdir(), `soul-sys-${process.pid}.txt`);
     fs.writeFileSync(sysFile, soul.react || "Reply with ONE short witty line (<= 80 chars).");
     const { execFileSync } = require("node:child_process");
-    const out = execFileSync("claude", buildGenArgs(sysFile), {
-      input: prompt,
-      timeout: 20000, encoding: "utf8", stdio: ["pipe", "pipe", "ignore"],
-      shell: process.platform === "win32", windowsHide: true,
-      // recursion guard: our own `claude -p` must NOT re-trigger the UserPromptSubmit hook
-      env: { ...process.env, CLAUDE_SOUL_GEN: "1" },
-    }).trim();
+    // recursion guard (CLAUDE_SOUL_GEN) + hardened reap live in genExecOpts()
+    const out = execFileSync("claude", buildGenArgs(sysFile), genExecOpts(prompt)).trim();
     const comment = (out.split("\n").filter(Boolean).pop() || "").trim();
     writeCache(cacheFile, { comment, ts: Date.now(), promptHash: promptHash(prompt) });
     pruneStaleCaches();
@@ -527,12 +586,18 @@ function generate() {
   }
 }
 
+// A per-session cache file (react-comment or git-snapshot) — safe to prune when idle.
+function prunableCacheName(name) {
+  return /^statusline-(soul|git)\..+\.cache\.json$/.test(name);
+}
+module.exports.prunableCacheName = prunableCacheName;
+
 // Remove per-session cache files whose sessions have been idle > 24h, so they never accumulate.
 function pruneStaleCaches() {
   try {
     const dir = claudeDir(), now = Date.now();
     for (const f of fs.readdirSync(dir)) {
-      if (!/^statusline-soul\..+\.cache\.json$/.test(f)) continue;
+      if (!prunableCacheName(f)) continue;
       const p = path.join(dir, f);
       try { if (now - fs.statSync(p).mtimeMs > 24 * 3600_000) fs.unlinkSync(p); } catch {}
     }

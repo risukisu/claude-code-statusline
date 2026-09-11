@@ -18,7 +18,7 @@
 
 A tiny, dependency-free status line for [Claude Code](https://docs.anthropic.com/en/docs/claude-code) that turns the empty bar at the bottom of your terminal into a glanceable dashboard: **which model + effort** you're on, **how much context** you've burned, **how close you are to your rate limits** (and whether you're burning them faster than the clock), and the **full git picture** of the repo you're in — branch, dirty files, ahead/behind, last sync, remote, and open PR.
 
-It reads only the JSON Claude Code already pipes to a status-line command. **No API calls, no dependencies** — just `node` and a few fast `git` calls. **Lines 1–3 read no transcript.** The optional [animal companion](#animal-companion-optional) (line 4) is off by default; its opt-in *react* mode can read your transcript to generate context-aware reactions.
+It reads only the JSON Claude Code already pipes to a status-line command. **No API calls, no dependencies** — just `node` and a few fast `git` calls. **Nothing reads your transcript or calls a model.** The optional [animal companion](#animal-companion-optional) (line 4) is off by default and rotates hand-written lines when on.
 
 <p align="center">
   <img src="docs/statusline.png" alt="claude-code-statusline running in a Claude Code terminal" width="840">
@@ -90,7 +90,7 @@ Four lines, each with its own job.
 | `gh:me/my-project` | origin remote (`gh:` = github.com; other hosts show their domain) |
 | `PR #12 pending` | open PR number + review state (`approved` · `pending` · `changes requested` · `draft`) |
 
-> `Line 4` is your optional **animal companion** — off by default (just a 🐿️), or a squirrel/fox/turtle that reacts to your work. See [Animal companion](#animal-companion-optional).
+> `Line 4` is your optional **animal companion** — off by default (just a 🐿️), or a squirrel/fox/turtle with a hand-written line for your current git/context state. See [Animal companion](#animal-companion-optional).
 
 ---
 
@@ -136,24 +136,19 @@ Copy-Item commands\animal.md "$HOME\.claude\commands\"
 ```
 </details>
 
-Then **merge [`settings.snippet.json`](settings.snippet.json) into `~/.claude/settings.json`** — both the `statusLine` block and the `UserPromptSubmit` hook (the hook powers the companion's `react` mode; merge it in, don't overwrite existing hooks):
+Then **merge [`settings.snippet.json`](settings.snippet.json) into `~/.claude/settings.json`** (merge it in, don't overwrite existing keys):
 
 ```json
 {
   "statusLine": {
     "type": "command",
     "command": "node ~/.claude/statusline.js",
-    "refreshInterval": 1
-  },
-  "hooks": {
-    "UserPromptSubmit": [
-      { "matcher": "", "hooks": [ { "type": "command", "command": "node ~/.claude/statusline.js --hook", "timeout": 30 } ] }
-    ]
+    "refreshInterval": 10
   }
 }
 ```
 
-> On **Windows**, use the full path with forward slashes: `node C:/Users/YOUR_USERNAME/.claude/statusline.js` (and the `--hook` line too).
+> On **Windows**, use the full path with forward slashes: `node C:/Users/YOUR_USERNAME/.claude/statusline.js`.
 > `refreshInterval: 1` redraws once a second to animate the workspace shimmer — drop it if you'd rather not repaint every second.
 
 **Restart Claude Code.** The dashboard appears at the bottom; line 4 invites you to run **`/animal`** to pick a companion (optional — see [Animal companion](#animal-companion-optional)).
@@ -201,25 +196,24 @@ Make it yours: edit the `match` regexes to your own root paths and pick any two 
 
 ## Animal companion (optional)
 
-Line 4 can host a small **animal companion** that comments on your work. It's **off by default** — no model calls until you opt in. Until you pick, line 4 invites you to run `/animal`; once you choose a character (or `off`), it settles in:
+Line 4 can host a small **animal companion** that comments on your work. It's **off by default**, and it never calls a model: every line is hand-written in a plain-markdown soul file. Until you pick, line 4 invites you to run `/animal`; once you choose a character (or `off`), it settles in:
 
 | mode | line 4 | cost |
 |---|---|---|
 | **off** (default) | just the emoji | none |
 | **canned** | `🦊 ~ 14 files dirty and no commit. bold.` | none — rotates hand-written lines, keyed to your git/context state |
-| **react** | `🦊 ~ refactoring auth? try not to lock yourself out` | one quick Haiku call per prompt |
 
-Three souls ship in [`souls/`](souls/) — each a plain-markdown file with `work`, `ambient` (in-character musings shown when you're idle), and `react` sections you can **edit freely**:
+Three souls ship in [`souls/`](souls/) — each a plain-markdown file with `work` and `ambient` (in-character musings shown when you're idle) sections you can **edit freely**:
 
 - 🐿️ **squirrel** — manic, enthusiastic hoarder; scattered, cheerful energy
 - 🦊 **fox** — clever and sly, with a little sass; efficiency-minded
 - 🐢 **turtle** — slow, patient, wise; gently talks you out of rushing
 
-**Pick a companion:** the [Install](#install) steps already placed the `souls/`, the `/animal` command, and the hook. Just run **`/animal`** in Claude Code — an interactive picker pops up to choose your companion and sentience level. (Or pass them directly: `/animal fox react`, or `/animal off` to quiet it back to the emoji.)
+**Pick a companion:** the [Install](#install) steps already placed the `souls/` and the `/animal` command. Just run **`/animal`** in Claude Code — an interactive picker pops up to choose your companion. (Or pass it directly: `/animal fox`, or `/animal off` to quiet it back to the emoji.)
 
 > If `/animal` doesn't autocomplete, **restart Claude Code** — slash commands load at session start.
 
-> **React mode & your limits:** react mode runs `claude -p --safe-mode --model haiku` (~3s) **once per prompt you submit**, fired by a `UserPromptSubmit` hook — using your existing Claude Code login (no API key needed), but **counting toward your rate limits**, and sending your latest prompt to Haiku. Each session is independent (its own cache), and a built-in burst cap (max ~20 generations per 2 minutes → a brief cooldown) stops it running away if anything misbehaves. It never blocks the status line: the call runs in a detached background process and line 4 shows the last result. `off` and `canned` make no model calls and read no transcript.
+> **Removed: live "react" mode.** Earlier versions offered a third mode that fired a background `claude -p --model haiku` call on every prompt you submitted. It was removed in the Unreleased version: that child ran as a full Claude Code session with your permission rules and **could act on your prompt** — in a controlled run inside a project folder it created the file it was asked for, and two incidents of files rewritten with no transcript matched its timing exactly. If you still have `"mode": "react"` in `~/.claude/statusline-soul.json` it now behaves as `canned`; you can also drop the old `UserPromptSubmit` hook entry from `~/.claude/settings.json` (it is inert either way).
 
 ---
 
@@ -236,7 +230,7 @@ Claude Code hands a status-line command a JSON blob on `stdin` describing the cu
 | `workspace.project_dir` / `current_dir` | launch root (shimmer) vs. the repo you're in |
 | `pr` | the PR badge |
 
-Everything git-related comes from a couple of `git --no-optional-locks` calls in the current directory (capped, never throws). By default — **no network, no API keys, no transcript reads** — it stays well under ~100 ms. The optional animal companion's *react* mode is the sole exception: it reads your latest prompt from the transcript and fires a background Haiku call, never on the render path (see [Animal companion](#animal-companion-optional)).
+Everything git-related comes from a couple of `git --no-optional-locks` calls in the current directory (capped, never throws). **No network, no API keys, no transcript reads, no model calls** — it stays well under ~100 ms. The animal companion (see [Animal companion](#animal-companion-optional)) only picks from hand-written lines.
 
 The context bar's gradient is ported from [`getagentseal/codeburn`](https://github.com/getagentseal/codeburn). The launch-root shimmer is the same gradient technique you can watch standalone in [`extras/shimmer.ps1`](extras/shimmer.ps1).
 
@@ -247,7 +241,7 @@ The context bar's gradient is ported from [`getagentseal/codeburn`](https://gith
 ```text
 claude-code-statusline/
 ├── statusline.js            # the dashboard — drop in ~/.claude/
-├── settings.snippet.json    # statusLine + UserPromptSubmit hook to merge into settings.json
+├── settings.snippet.json    # statusLine block to merge into settings.json
 ├── examples/
 │   ├── sample-input.json    # pipe this in to preview without Claude Code
 │   └── profile.ps1          # ccp / cca dual-workspace launchers

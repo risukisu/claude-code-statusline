@@ -2,6 +2,29 @@
 
 ## Unreleased
 
+### Removed
+
+- **The live "react" companion mode, and with it every model call in this project.**
+  React mode forwarded each prompt you submitted to a background
+  `claude -p --safe-mode --no-session-persistence --model haiku` child so it could reply
+  with a one-line quip. That child was a complete Claude Code session: it received your
+  prompt as its task, ran with your `~/.claude/settings.json` permission rules, inherited
+  the working directory, and — because of `--no-session-persistence` — wrote no transcript.
+  Given a prompt that read like an instruction it did the work instead of joking about it.
+  In a controlled run inside a project folder, asked to create a file, the child created it
+  (under both 2.1.267 and 2.1.268) and replied "file made!"; the same command run from a
+  folder under `~/.claude` was stopped by a permission check, so the outcome depends on
+  where the session happens to be. Two earlier incidents of source files being rewritten
+  with no transcript matched its timing to the second and echoed the prompt text.
+
+  The mode is gone rather than patched. `statusline.js` now contains no `child_process`
+  call to `claude`, no transcript reader, no prompt hashing, no circuit breaker and no
+  per-session comment cache. `MODES` is `off | canned`; a leftover `"mode": "react"` in
+  `~/.claude/statusline-soul.json` is read as `canned`. `statusline.js --hook` and
+  `--gen` remain as silent no-ops so an old `UserPromptSubmit` hook entry prints nothing
+  into Claude's context; `settings.snippet.json` no longer ships a hook at all. The
+  `## react` section was dropped from the shipped souls and `/animal` no longer offers it.
+
 ### Fixed
 
 - **Status-line renders could leak into permanently-hung processes.** `main()`

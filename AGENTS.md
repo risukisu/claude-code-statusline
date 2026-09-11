@@ -6,7 +6,7 @@
 > Working *on* this repo (tests, architecture, contributing)? See [`CONTRIBUTING.md`](CONTRIBUTING.md). This file is only about installing the tool onto a user's machine.
 
 ## What you're installing
-A 3-line Claude Code status line (`statusline.js`) plus an optional line-4 **animal companion**: the `/animal` slash command, the `souls/` personality files, and a `UserPromptSubmit` hook. Everything lives under the user's `~/.claude/` directory — this is a **user-level** install, never per-project.
+A 3-line Claude Code status line (`statusline.js`) plus an optional line-4 **animal companion**: the `/animal` slash command and the `souls/` personality files. Everything lives under the user's `~/.claude/` directory — this is a **user-level** install, never per-project.
 
 ## Prerequisites — check these first; warn the user if missing
 1. **Node.js** on `PATH` (`node --version` works). Required.
@@ -23,20 +23,21 @@ Create `~/.claude/`, `~/.claude/souls/`, and `~/.claude/commands/` if they don't
 2. Copy **every** file in `souls/` (`squirrel.md`, `fox.md`, `turtle.md`) → `~/.claude/souls/`
 3. Copy `commands/animal.md` → `~/.claude/commands/animal.md`  ← **without this, `/animal` will not exist**
 4. **Merge** `settings.snippet.json` into `~/.claude/settings.json`:
-   - Add the `statusLine` block **and** the `UserPromptSubmit` entry under `hooks` (the hook powers the companion's `react` mode).
-   - **MERGE — do not overwrite.** Preserve every existing key, and if the user already has `hooks.UserPromptSubmit`, **append** your entry to that array rather than replacing it. The result must be valid JSON.
-   - On **Windows**, replace `YOUR_USERNAME` with the real username and keep forward slashes, e.g. `node C:/Users/<username>/.claude/statusline.js` (and the `--hook` variant).
+   - Add the `statusLine` block. **Do not add any hook** — this tool needs none.
+   - **MERGE — do not overwrite.** Preserve every existing key. The result must be valid JSON.
+   - On **Windows**, replace `YOUR_USERNAME` with the real username and keep forward slashes, e.g. `node C:/Users/<username>/.claude/statusline.js`.
+   - If an older install left a `hooks.UserPromptSubmit` entry running `statusline.js --hook`, remove that one entry (leave the user's other hooks alone). It is inert but pointless.
 5. Tell the user, in these words:
-   > Installed. **Restart Claude Code** — slash commands and hooks only load at session start — then run **`/animal`** to pick a companion.
+   > Installed. **Restart Claude Code** — slash commands only load at session start — then run **`/animal`** to pick a companion.
 
 ## Verify before reporting success
 - Run: `printf '{}' | node ~/.claude/statusline.js` → expect a few lines of output and no error.
 - Confirm these exist: `~/.claude/statusline.js`, `~/.claude/commands/animal.md`, `~/.claude/souls/squirrel.md`.
-- Confirm `~/.claude/settings.json` is valid JSON and contains both `statusLine` and `hooks.UserPromptSubmit`.
+- Confirm `~/.claude/settings.json` is valid JSON and contains `statusLine`.
 
 If any check fails, fix it before telling the user it's done.
 
 ## Important notes
-- The companion is **off by default** — no model calls until the user runs `/animal`. Don't enable `react` for them silently.
-- `react` mode makes one small `claude -p --model haiku` call **per prompt the user submits** (uses their existing Claude Code login, no API key, but counts toward their rate limits). `off` and `canned` make **zero** model calls. A built-in circuit breaker caps bursts.
-- Generation is fired only by the `UserPromptSubmit` hook, once per prompt; the status-line render is read-only and never calls a model. Don't add extra hooks or status lines for other projects.
+- The companion is **off by default**. Both modes (`off`, `canned`) make **zero** model calls and read no transcript.
+- There is no `react` mode any more. If the user asks for it, say it was removed because the background `claude -p` child it spawned could act on their prompts; do not try to recreate it.
+- Don't add extra hooks or status lines for other projects.

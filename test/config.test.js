@@ -13,8 +13,14 @@ test("missing file → off/squirrel", () => {
 });
 test("reads mode and animal", () => {
   const p = tmp("ok.json");
-  fs.writeFileSync(p, JSON.stringify({ mode: "react", animal: "fox" }));
-  assert.deepStrictEqual(loadConfig(p), { mode: "react", animal: "fox" });
+  fs.writeFileSync(p, JSON.stringify({ mode: "canned", animal: "fox" }));
+  assert.deepStrictEqual(loadConfig(p), { mode: "canned", animal: "fox" });
+  fs.unlinkSync(p);
+});
+test("legacy react mode degrades to canned (the live-Haiku path was removed)", () => {
+  const p = tmp("legacy.json");
+  fs.writeFileSync(p, JSON.stringify({ mode: "react", animal: "turtle" }));
+  assert.deepStrictEqual(loadConfig(p), { mode: "canned", animal: "turtle" });
   fs.unlinkSync(p);
 });
 test("invalid values fall back", () => {

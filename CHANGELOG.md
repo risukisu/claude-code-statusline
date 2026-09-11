@@ -10,10 +10,12 @@
   with a one-line quip. That child was a complete Claude Code session: it received your
   prompt as its task, ran with your `~/.claude/settings.json` permission rules, inherited
   the working directory, and — because of `--no-session-persistence` — wrote no transcript.
-  Given a prompt that read like an instruction it tried to do the work instead of joking
-  about it: in a controlled run, asked to create a file, the child attempted the write and
-  was stopped only by a permission check. Two earlier incidents of source files being
-  rewritten with no transcript matched its timing to the second and echoed the prompt text.
+  Given a prompt that read like an instruction it did the work instead of joking about it.
+  In a controlled run inside a project folder, asked to create a file, the child created it
+  (under both 2.1.267 and 2.1.268) and replied "file made!"; the same command run from a
+  folder under `~/.claude` was stopped by a permission check, so the outcome depends on
+  where the session happens to be. Two earlier incidents of source files being rewritten
+  with no transcript matched its timing to the second and echoed the prompt text.
 
   The mode is gone rather than patched. `statusline.js` now contains no `child_process`
   call to `claude`, no transcript reader, no prompt hashing, no circuit breaker and no

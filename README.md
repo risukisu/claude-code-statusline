@@ -213,7 +213,7 @@ Three souls ship in [`souls/`](souls/) — each a plain-markdown file with `work
 
 > If `/animal` doesn't autocomplete, **restart Claude Code** — slash commands load at session start.
 
-> **Removed: live "react" mode.** Earlier versions offered a third mode that fired a background `claude -p --model haiku` call on every prompt you submitted. It was removed in the Unreleased version: that child ran as a full Claude Code session with your permission rules and **could act on your prompt** — in a controlled run it tried to create a file it was asked for, and two incidents of files rewritten with no transcript matched its timing exactly. If you still have `"mode": "react"` in `~/.claude/statusline-soul.json` it now behaves as `canned`; you can also drop the old `UserPromptSubmit` hook entry from `~/.claude/settings.json` (it is inert either way).
+> **Removed: live "react" mode.** Earlier versions offered a third mode that fired a background `claude -p --model haiku` call on every prompt you submitted. It was removed in the Unreleased version: that child ran as a full Claude Code session with your permission rules and **could act on your prompt** — in a controlled run inside a project folder it created the file it was asked for, and two incidents of files rewritten with no transcript matched its timing exactly. If you still have `"mode": "react"` in `~/.claude/statusline-soul.json` it now behaves as `canned`; you can also drop the old `UserPromptSubmit` hook entry from `~/.claude/settings.json` (it is inert either way).
 
 ---
 

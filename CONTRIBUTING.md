@@ -62,7 +62,7 @@ Expected: all **~38** tests pass, in well under a second. No network, no setup.
 
 There is exactly one: **`main()` — the render path.** Claude Code runs it on every status-line refresh. It reads the stdin JSON, gathers git info (cached per session), loads config + soul, and prints lines 1–4. Line 4 is chosen by `renderLine4()` from the soul's hand-written `work`/`ambient` lists — **pure, synchronous, no model call, no transcript read.**
 
-`statusline.js --hook` and `--gen` still exist only as silent no-ops. They were the entry points of the removed live "react" mode, which forwarded every submitted prompt to a background `claude -p --model haiku` child. That child was a full Claude Code session with the user's permission rules and could act on the prompt (in a controlled run it tried to create a file it was asked for; two unexplained file rewrites matched its timing exactly), so the whole path was deleted rather than patched. Do not reintroduce a model call anywhere in this file.
+`statusline.js --hook` and `--gen` still exist only as silent no-ops. They were the entry points of the removed live "react" mode, which forwarded every submitted prompt to a background `claude -p --model haiku` child. That child was a full Claude Code session with the user's permission rules and could act on the prompt (in a controlled run inside a project folder it created the file it was asked for; two unexplained file rewrites matched its timing exactly), so the whole path was deleted rather than patched. Do not reintroduce a model call anywhere in this file.
 
 ### Key design decisions
 

@@ -30,33 +30,28 @@
 
 "use strict";
 const { execSync } = require("child_process");
-const crypto = require("node:crypto");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 
 const EMOJI = { squirrel: "🐿️", fox: "🦊", turtle: "🐢" };
 const ANIMALS = ["squirrel", "fox", "turtle"];
-const MODES = ["off", "canned", "react"];
-const IDLE_AFTER_MS = 90_000;
+const MODES = ["off", "canned"];
 const AMBIENT_EVERY_MS = 30_000;
-const PROMPT_MAX = 500;
 // Render safety net. main() blocks on stdin 'end', but Claude Code cancels a
 // superseded render by orphaning the process WITHOUT closing stdin, so 'end'
 // may never fire — leaving the node process hung forever at 0% CPU. This caps a
 // render's life so an orphan self-terminates instead of accumulating. Overridable
-// via env for fast tests. (hook() has the same guard on line ~557.)
+// via env for fast tests.
 const RENDER_WATCHDOG_MS = parseInt(process.env.STATUSLINE_WATCHDOG_MS || "", 10) || 8000;
 
 // Honor Claude Code's CLAUDE_CONFIG_DIR (falls back to ~/.claude) so config, souls
 // and caches resolve to the real config dir — and tests can point it at a tmp dir.
 const claudeDir = () => process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), ".claude");
 const CONFIG_FILE = () => path.join(claudeDir(), "statusline-soul.json");
-// Per-session cache: keyed by session_id (present in BOTH the status-line stdin and the
-// UserPromptSubmit hook stdin) so no session can ever read or trigger another's generation.
+// Per-session cache key (session_id from the status-line stdin) so parallel sessions never
+// read each other's git snapshot.
 const sessionKey = (id) => (String(id || "default").replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 64) || "default");
-const CACHE_FILE = (id) => path.join(claudeDir(), `statusline-soul.${sessionKey(id)}.cache.json`);
-const BUDGET_FILE = () => path.join(claudeDir(), "statusline-soul.budget.json");
 // Per-session git snapshot cache — lets rapid successive renders skip the 4–5 git
 // subprocesses. Short TTL keeps dirty/ahead-behind counts responsive.
 const GIT_CACHE_FILE = (id) => path.join(claudeDir(), `statusline-git.${sessionKey(id)}.cache.json`);
@@ -64,43 +59,13 @@ const GIT_CACHE_TTL_MS = parseInt(process.env.STATUSLINE_GIT_TTL_MS || "", 10) |
 const SOUL_FILE = (animal) => path.join(claudeDir(), "souls", `${animal}.md`);
 const COMMAND_FILE = () => path.join(claudeDir(), "commands", "animal.md");
 
-// Circuit breaker — machine-wide burst cap so a runaway can never drain the rate limit.
-const BURST_MAX = 20;             // this many generations…
-const BURST_WINDOW_MS = 120_000;  // …inside this window trips the breaker
-const COOLDOWN_MS = 30 * 60_000;  // and it stays tripped (no model calls) this long
-
 module.exports = {}; // extended by later tasks
-
-// ─── transcript parser ─────────────────────────────────────────────────────
-function latestUserPrompt(transcriptPath) {
-  try {
-    const buf = fs.readFileSync(transcriptPath, "utf8");
-    const lines = buf.trim().split("\n");
-    for (let i = lines.length - 1; i >= 0; i--) {
-      let o; try { o = JSON.parse(lines[i]); } catch { continue; }
-      const msg = o.message || o;
-      const isUser = o.type === "user" || (msg && msg.role === "user");
-      if (!isUser || !msg) continue;
-      const c = msg.content;
-      if (typeof c === "string") return c.trim() || null;
-      if (Array.isArray(c)) {
-        const text = c.filter((b) => b && b.type === "text").map((b) => b.text).join(" ").trim();
-        if (text) return text;
-      }
-    }
-    return null;
-  } catch {
-    return null;
-  }
-}
-module.exports.latestUserPrompt = latestUserPrompt;
 
 // ─── soul markdown parser ──────────────────────────────────────────────────
 function parseSoul(md) {
-  const out = { voice: "", rules: "", work: [], ambient: [], react: "" };
+  const out = { voice: "", rules: "", work: [], ambient: [] };
   if (typeof md !== "string") return out;
   let section = null;
-  const reactLines = [];
   for (const raw of md.split("\n")) {
     const line = raw.replace(/\r$/, "");
     const h = line.match(/^##\s+(\w+)/);
@@ -110,11 +75,8 @@ function parseSoul(md) {
     if ((section === "work" || section === "ambient") && line.trim().startsWith("-")) {
       const item = line.replace(/^\s*-\s+/, "").trim();
       if (item) out[section].push(item);
-    } else if (section === "react") {
-      reactLines.push(line);
     }
   }
-  out.react = reactLines.join("\n").trim();
   return out;
 }
 module.exports.parseSoul = parseSoul;
@@ -284,15 +246,7 @@ function limitSeg(label, win, windowLen) {
   return seg;
 }
 
-// ─── prompt hashing + cache I/O ───────────────────────────────────────────
-function promptHash(text) {
-  return crypto.createHash("sha1").update(String(text)).digest("hex").slice(0, 16);
-}
-function isNewPrompt(prompt, cache) {
-  if (!prompt) return false;
-  if (!cache || !cache.promptHash) return true;
-  return cache.promptHash !== promptHash(prompt);
-}
+// ─── cache I/O (git snapshot) ─────────────────────────────────────────────
 function readCache(file) {
   try { return JSON.parse(fs.readFileSync(file, "utf8")); } catch { return null; }
 }
@@ -309,28 +263,10 @@ function writeCache(file, obj) {
 function gitCacheFresh(cache, cwd, now, ttlMs) {
   return !!(cache && cache.cwd === cwd && typeof cache.gitTs === "number" && now - cache.gitTs < ttlMs);
 }
-module.exports.promptHash = promptHash;
-module.exports.isNewPrompt = isNewPrompt;
 module.exports.readCache = readCache;
 module.exports.writeCache = writeCache;
 module.exports.gitCacheFresh = gitCacheFresh;
 
-// ─── circuit breaker (pure) ───────────────────────────────────────────────
-// Given the recorded generation timestamps and `now`, decide whether one more
-// model call is allowed. Trips (and starts a cooldown) on a burst; auto-resets.
-function evaluateBudget(budget, now) {
-  budget = budget && Array.isArray(budget.events) ? budget : { events: [], tripUntil: 0 };
-  if (budget.tripUntil && now < budget.tripUntil) return { allowed: false, state: "cooldown", budget };
-  const events = budget.events.filter((t) => now - t < BURST_WINDOW_MS);
-  if (events.length >= BURST_MAX) return { allowed: false, state: "tripped", budget: { events, tripUntil: now + COOLDOWN_MS } };
-  return { allowed: true, state: "ok", budget: { events: [...events, now], tripUntil: 0 } };
-}
-function isPaused(budgetFile, now) {
-  const b = readCache(budgetFile);
-  return !!(b && b.tripUntil && now < b.tripUntil);
-}
-module.exports.evaluateBudget = evaluateBudget;
-module.exports.isPaused = isPaused;
 module.exports.sessionKey = sessionKey;
 
 // ─── line-4 dispatcher ────────────────────────────────────────────────────
@@ -347,15 +283,7 @@ function renderLine4(cfg, soul, ctx, now) {
     return emoji;
   }
   if (!soul) return emoji; // soul file missing → degrade gracefully
-  let text = null;
-  if (cfg.mode === "react") {
-    const c = ctx.cache;
-    if (c && c.comment && now - c.ts < IDLE_AFTER_MS) text = c.comment;
-    else if (ctx.paused) return `${DIM}${truncate(`${emoji} ~ resting (burst cap — back soon)`, ctx.cols)}${RESET}`;
-    else text = pickAmbient(soul, now);
-  } else {
-    text = pickCanned(soul, ctx, now);
-  }
+  const text = pickCanned(soul, ctx, now); // hand-written lines only — never a model call
   return text ? truncate(`${emoji} ~ ${text}`, ctx.cols) : emoji;
 }
 module.exports.renderLine4 = renderLine4;
@@ -377,7 +305,7 @@ process.stdin.on("end", () => {
   const cols = parseInt(process.env.COLUMNS || "", 10) || 120;
   const barW = cols < 90 ? 12 : 20;
 
-  // — Animal companion setup (render is READ-ONLY: it never spawns a generation) —
+  // — Animal companion setup (canned lines only: no model calls, no transcript reads) —
   const cfgFile = CONFIG_FILE();
   const hasConfig = fs.existsSync(cfgFile);
   const hasCommand = fs.existsSync(COMMAND_FILE());
@@ -389,8 +317,6 @@ process.stdin.on("end", () => {
     hasConfig, hasCommand, hasRepo, dirty,
     contextPct: (d.context_window && d.context_window.used_percentage) || 0,
     cols,
-    cache: cfg.mode === "react" ? readCache(CACHE_FILE(d.session_id)) : null,
-    paused: cfg.mode === "react" ? isPaused(BUDGET_FILE(), nowMs) : false,
   }, nowMs);
 
   // — Line 1 (session): model · effort · context bar · lines changed —
@@ -484,7 +410,7 @@ process.stdin.on("end", () => {
 
   console.log(line3);
 
-  // — Line 4: animal companion (generation is driven by the UserPromptSubmit hook, never from render) —
+  // — Line 4: animal companion (canned lines; no model call) —
   console.log(line4(true, g.dirty));
 });
 }
@@ -493,7 +419,8 @@ function loadConfig(file) {
   try {
     const c = JSON.parse(fs.readFileSync(file, "utf8"));
     return {
-      mode: MODES.includes(c.mode) ? c.mode : "off",
+      // "react" (the retired live-Haiku mode) degrades to canned so an old config keeps its companion.
+      mode: c.mode === "react" ? "canned" : MODES.includes(c.mode) ? c.mode : "off",
       animal: ANIMALS.includes(c.animal) ? c.animal : "squirrel",
     };
   } catch {
@@ -503,11 +430,6 @@ function loadConfig(file) {
 module.exports.loadConfig = loadConfig;
 
 // ─── hybrid line-selection cadence ────────────────────────────────────────
-function pickAmbient(soul, now) {
-  const list = soul.ambient.length ? soul.ambient : soul.work;
-  if (!list.length) return null;
-  return list[Math.floor(now / AMBIENT_EVERY_MS) % list.length];
-}
 function pickCanned(soul, ctx, now) {
   const notable = (ctx.hasRepo && ctx.dirty > 0) || ctx.contextPct >= 70;
   const list = notable && soul.work.length ? soul.work
@@ -519,120 +441,15 @@ function truncate(text, cols) {
   const max = Math.max(8, (cols || 120) - 4);
   return text.length <= max ? text : text.slice(0, max - 1) + "…";
 }
-module.exports.pickAmbient = pickAmbient;
 module.exports.pickCanned = pickCanned;
 module.exports.truncate = truncate;
 
-// ─── react mode generator ─────────────────────────────────────────────────
-
-function buildGenArgs(sysPromptFile) {
-  return [
-    "-p", "--safe-mode", "--no-session-persistence",
-    "--model", "haiku", "--system-prompt-file", sysPromptFile,
-  ];
-}
-module.exports.buildGenArgs = buildGenArgs;
-
-// child_process options for the `claude -p` gen call: bounded timeout, force-kill on
-// timeout (SIGTERM can be ignored), silenced stderr, prompt via stdin, recursion guard.
-function genExecOpts(prompt) {
-  return {
-    input: prompt,
-    timeout: parseInt(process.env.STATUSLINE_GEN_TIMEOUT_MS || "", 10) || 20000,
-    killSignal: "SIGKILL",
-    encoding: "utf8",
-    stdio: ["pipe", "pipe", "ignore"],
-    shell: process.platform === "win32",
-    windowsHide: true,
-    env: { ...process.env, CLAUDE_SOUL_GEN: "1" },
-  };
-}
-module.exports.genExecOpts = genExecOpts;
-
-// Runs in the detached --gen child: generate one comment, write the cache, exit.
-// Cross-platform-safe: multi-line soul via a temp file; user prompt via stdin — never a shell arg.
-function generate() {
-  let sysFile;
-  const session = process.env.SOUL_SESSION || "default";
-  const cacheFile = CACHE_FILE(session);
-  try {
-    const cfg = loadConfig(CONFIG_FILE());
-    if (cfg.mode !== "react") return;
-    const prompt = (process.env.SOUL_PROMPT || latestUserPrompt(process.env.SOUL_TRANSCRIPT || "") || "").slice(0, PROMPT_MAX);
-    if (!prompt.trim()) return;
-
-    // per-session dedup: this prompt was already commented on → nothing to do
-    const prev = readCache(cacheFile);
-    if (prev && prev.comment && prev.promptHash === promptHash(prompt)) return;
-
-    // circuit breaker: machine-wide burst cap — a runaway can never drain the rate limit
-    const decision = evaluateBudget(readCache(BUDGET_FILE()), Date.now());
-    writeCache(BUDGET_FILE(), decision.budget);
-    if (!decision.allowed) return; // tripped or cooling down → no model call
-
-    const soul = parseSoul(fs.readFileSync(SOUL_FILE(cfg.animal), "utf8"));
-    sysFile = path.join(os.tmpdir(), `soul-sys-${process.pid}.txt`);
-    fs.writeFileSync(sysFile, soul.react || "Reply with ONE short witty line (<= 80 chars).");
-    const { execFileSync } = require("node:child_process");
-    // recursion guard (CLAUDE_SOUL_GEN) + hardened reap live in genExecOpts()
-    const out = execFileSync("claude", buildGenArgs(sysFile), genExecOpts(prompt)).trim();
-    const comment = (out.split("\n").filter(Boolean).pop() || "").trim();
-    writeCache(cacheFile, { comment, ts: Date.now(), promptHash: promptHash(prompt) });
-    pruneStaleCaches();
-  } catch {
-    /* never throw from a background generation */
-  } finally {
-    try { if (sysFile) fs.unlinkSync(sysFile); } catch {}
-  }
-}
-
-// A per-session cache file (react-comment or git-snapshot) — safe to prune when idle.
-function prunableCacheName(name) {
-  return /^statusline-(soul|git)\..+\.cache\.json$/.test(name);
-}
-module.exports.prunableCacheName = prunableCacheName;
-
-// Remove per-session cache files whose sessions have been idle > 24h, so they never accumulate.
-function pruneStaleCaches() {
-  try {
-    const dir = claudeDir(), now = Date.now();
-    for (const f of fs.readdirSync(dir)) {
-      if (!prunableCacheName(f)) continue;
-      const p = path.join(dir, f);
-      try { if (now - fs.statSync(p).mtimeMs > 24 * 3600_000) fs.unlinkSync(p); } catch {}
-    }
-  } catch {}
-}
-
-// Runs as the UserPromptSubmit hook: fire ONE detached generation for THIS prompt, then exit 0.
-// Must be fast and silent — Claude waits for it, and any stdout would be injected into context.
-function hook() {
-  if (process.env.CLAUDE_SOUL_GEN) return process.exit(0);      // recursion guard: never react to our own claude -p
-  if (loadConfig(CONFIG_FILE()).mode !== "react") return process.exit(0); // fast bail when off/canned
-  let raw = "";
-  const done = () => {
-    try {
-      let j = {}; try { j = JSON.parse(raw); } catch {}
-      const prompt = String(j.prompt || "").slice(0, PROMPT_MAX);
-      if (prompt.trim()) {
-        const { spawn } = require("node:child_process");
-        spawn(process.execPath, [__filename, "--gen"], {
-          detached: true, windowsHide: true, stdio: "ignore",
-          env: { ...process.env, SOUL_SESSION: j.session_id || "default", SOUL_PROMPT: prompt },
-        }).unref();
-      }
-    } catch {}
-    process.exit(0);
-  };
-  process.stdin.setEncoding("utf8");
-  process.stdin.on("data", (c) => (raw += c));
-  process.stdin.on("end", done);
-  setTimeout(() => process.exit(0), 2000).unref(); // safety: never hang the prompt
-}
-module.exports.hook = hook;
+// ─── retired entry points ─────────────────────────────────────────────────
+// `--hook` and `--gen` belonged to the removed live "react" mode (a background
+// `claude -p` call per submitted prompt). They stay as silent no-ops so a settings.json
+// that still registers the UserPromptSubmit hook never prints status lines into hook output.
 
 if (require.main === module) {
-  if (process.argv.includes("--gen")) generate();
-  else if (process.argv.includes("--hook")) hook();
-  else main();
+  if (process.argv.includes("--gen") || process.argv.includes("--hook")) process.exit(0);
+  main();
 }

@@ -1,31 +1,31 @@
 // test/cache.test.js
+// readCache/writeCache back the per-session git-snapshot cache: atomic (temp file + rename),
+// never throwing, and returning null for anything missing or malformed.
 const { test } = require("node:test");
 const assert = require("node:assert");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
-const { promptHash, isNewPrompt, readCache, writeCache } = require("../statusline.js");
+const { readCache, writeCache } = require("../statusline.js");
 
-const tmp = (n) => path.join(os.tmpdir(), `soulcache-${process.pid}-${n}`);
+const tmp = (n) => path.join(os.tmpdir(), `gitcache-${process.pid}-${n}`);
 
-test("promptHash is stable and differs by input", () => {
-  assert.strictEqual(promptHash("a"), promptHash("a"));
-  assert.notStrictEqual(promptHash("a"), promptHash("b"));
-});
-test("isNewPrompt true when hash differs or no cache", () => {
-  assert.strictEqual(isNewPrompt("hi", null), true);
-  assert.strictEqual(isNewPrompt("hi", { promptHash: promptHash("hi") }), false);
-  assert.strictEqual(isNewPrompt("hi", { promptHash: promptHash("bye") }), true);
-});
-test("isNewPrompt false for empty prompt", () => {
-  assert.strictEqual(isNewPrompt(null, null), false);
-});
 test("write then read round-trips", () => {
-  const p = tmp("rt.json");
-  writeCache(p, { comment: "x", ts: 5, promptHash: "h", generating: 0 });
-  assert.deepStrictEqual(readCache(p), { comment: "x", ts: 5, promptHash: "h", generating: 0 });
-  fs.unlinkSync(p);
+  const f = tmp("rt.json");
+  writeCache(f, { cwd: "D:/x", gitTs: 123, g: { dirty: 2 } });
+  assert.deepStrictEqual(readCache(f), { cwd: "D:/x", gitTs: 123, g: { dirty: 2 } });
+  assert.strictEqual(fs.existsSync(`${f}.${process.pid}.tmp`), false); // temp file renamed away
+  fs.unlinkSync(f);
 });
 test("readCache missing → null", () => {
-  assert.strictEqual(readCache(tmp("nope.json")), null);
+  assert.strictEqual(readCache(tmp("missing.json")), null);
+});
+test("readCache malformed → null, never throws", () => {
+  const f = tmp("bad.json");
+  fs.writeFileSync(f, "{nope");
+  assert.strictEqual(readCache(f), null);
+  fs.unlinkSync(f);
+});
+test("writeCache to an unwritable path never throws", () => {
+  assert.doesNotThrow(() => writeCache(path.join(tmp("no-such-dir"), "x", "y.json"), { a: 1 }));
 });

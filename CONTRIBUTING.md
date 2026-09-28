@@ -44,7 +44,7 @@ node --test test/lines.test.js
 
 ### The Render Path
 
-`main()` is the only execution path. Claude Code runs it after each message and every `refreshInterval` seconds. It reads the stdin JSON, loads `~/.claude/statusline.json` and applies its theme, loads the companion config and soul, reads git (from the per-session cache when it's under 3 seconds old), and prints the lines. A watchdog ends the process after 8 seconds, because Claude Code cancels a superseded render by orphaning it with stdin still open.
+`main()` is the only execution path. Claude Code runs it after each message and every `refreshInterval` seconds. It reads the stdin JSON, loads `~/.claude/statusline.json` and applies its theme, loads the companion config and soul, reads git (from the per-session cache when it's under 3 seconds old), and prints the lines. Each line is built as a list of segments; `fitSegments()` applies each segment's ranked cuts until the line fits `COLUMNS`, and the gutter is added last. A watchdog ends the process after 8 seconds, because Claude Code cancels a superseded render by orphaning it with stdin still open.
 
 A session's first render (no cache file yet) sweeps `statusline-git.*` caches idle for a day and temp files older than a minute. The sweep matches that one filename pattern and nothing else.
 
@@ -116,6 +116,7 @@ rules: one line, <= 80 chars, never mean, no emoji (the 🦊 is added)
 | `heat.test.js` | the front-loaded context heat scale and the `/compact` hint |
 | `limitbar.test.js` | limit bars: fill, notch, overspend colouring |
 | `look.test.js` | themes, quiet mode, clickable links, `NO_COLOR`, `hide` |
+| `fit.test.js` | narrow-terminal cuts, `visibleWidth`, and the gutter |
 | `version.test.js` | `VERSION` matches the newest CHANGELOG entry |
 
 Tests that run the script set `CLAUDE_CONFIG_DIR` to a temp folder; `test/helpers.js` has a `render()` that does it for you, with an optional settings file, companion, and seeded git state. **Do the same for any manual run** while you work on caching or cleanup code: a bare `node statusline.js` reads and tidies your real `~/.claude`.

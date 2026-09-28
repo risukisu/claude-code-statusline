@@ -196,6 +196,7 @@ Everything works without a settings file. To change the defaults, create `~/.cla
   "theme": "default",
   "quiet": true,
   "links": true,
+  "gutter": true,
   "context": { "warn": 40, "danger": 50 },
   "palettes": [
     { "match": "ai_workspace_personal", "from": "#06b6d4", "to": "#4ade80" }
@@ -209,6 +210,7 @@ Everything works without a settings file. To change the defaults, create `~/.cla
 | `theme` | `"default"` | `"default"`, `"high-contrast"` (brighter greys and text), or `"colorblind"` (blue, yellow, and vermillion instead of green and red) |
 | `quiet` | `true` | dims what's healthy, like `✓ synced` or low usage, so only what needs attention stands out |
 | `links` | `true` | makes the remote and the PR clickable |
+| `gutter` | `true` | a `▌` down the left edge in the workspace colours, so the four lines read as one block |
 | `context` | `40` / `50` | where the context bar turns orange (`warn`) and red with the `/compact` hint (`danger`) |
 | `palettes` | two built-in | workspace shimmer colours; see below |
 | `hide` | `[]` | segments to leave out: `effort`, `tokens`, `diff`, `limits`, `sync`, `remote`, `pr`, `companion` |
@@ -235,6 +237,8 @@ Claude Code runs a status-line command after each message and every `refreshInte
 | `workspace.project_dir` / `.current_dir` | launch folder versus the repo you're in |
 | `pr.number`, `pr.url`, `pr.review_state`, `pr.kind` | the PR badge and its link |
 | `git status`, `rev-parse`, `config`, `log` | branch, changes, ahead/behind, remote |
+
+In a narrow terminal (a split pane, the VS Code side panel), each line drops its least useful parts instead of wrapping. Line 3 drops the remote first, then the sync age, the PR's review words, the `▸` repo name, and finally the PR. Line 1 drops the token count, then the diff, then the effort; line 2 drops the countdowns, then the 7-day window. Branch, uncommitted files, ahead/behind, the context %, and the `/compact` hint always stay. Claude Code passes the real width in `COLUMNS`.
 
 Links use the OSC 8 escape code that Claude Code passes through to the terminal. The git reads use `--no-optional-locks` and short timeouts, and each session caches them for three seconds, so a burst of redraws runs git once. A render that Claude Code cancels exits on its own. Cache files live in `~/.claude/statusline-git.*`, and a new session clears the ones idle for a day.
 

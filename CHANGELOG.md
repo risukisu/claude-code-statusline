@@ -20,6 +20,12 @@ release changes the soul format, the config file, or the install layout.
   blue, yellow, and vermillion. The standard `NO_COLOR` variable prints plain text.
 - **Quiet mode, on by default.** Healthy segments such as `✓ synced` and low usage are
   dimmed, so what needs attention stands out.
+- **A workspace gutter.** A `▌` down the left edge in the workspace colours ties the four
+  lines into one block. `"gutter": false` turns it off.
+- **Narrow terminals.** Each line fits the width Claude Code reports: line 3 drops the
+  remote, then the sync age, the PR's review words, the `▸` repo name, and the PR; lines 1
+  and 2 drop the token count, diff, effort, and countdowns. Branch, changes, ahead/behind,
+  the context %, and the `/compact` hint always stay.
 
 ### Changed
 

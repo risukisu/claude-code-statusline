@@ -21,6 +21,7 @@ test("missing file → defaults", () => {
   assert.strictEqual(c.theme, "default");
   assert.strictEqual(c.links, true);
   assert.strictEqual(c.quiet, true);
+  assert.strictEqual(c.gutter, true);
   assert.deepStrictEqual(c.context, { warn: 40, danger: 50 });
   assert.strictEqual(c.palettes, null); // null = the built-in workspace palettes
 });
@@ -29,12 +30,13 @@ test("malformed json → defaults", () => {
 });
 test("reads theme, links, quiet, context thresholds, hide list, bar width", () => {
   const c = loadDashConfig(tmp("ok", {
-    theme: "colorblind", links: false, quiet: false, context: { warn: 30, danger: 45 },
+    theme: "colorblind", links: false, quiet: false, gutter: false, context: { warn: 30, danger: 45 },
     hide: ["effort", "remote"], barWidth: 16,
   }));
   assert.strictEqual(c.theme, "colorblind");
   assert.strictEqual(c.links, false);
   assert.strictEqual(c.quiet, false);
+  assert.strictEqual(c.gutter, false);
   assert.deepStrictEqual(c.context, { warn: 30, danger: 45 });
   assert.deepStrictEqual(c.hide, ["effort", "remote"]);
   assert.strictEqual(c.barWidth, 16);

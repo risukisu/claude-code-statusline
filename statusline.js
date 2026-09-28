@@ -144,10 +144,38 @@ const rgb = (r, g, b) => (P.color ? `\x1b[38;2;${r};${g};${b}m` : "");
 // OSC 8 hyperlink: clickable in terminals that support it, plain text elsewhere.
 const link = (url, text) => (LINKS && url ? `\x1b]8;;${url}\x07${text}\x1b]8;;\x07` : text);
 
+// ─── fitting a line to the terminal ───────────────────────────────────────
+// Terminal cells a string takes: colour and link codes take none, emoji take two.
+function visibleWidth(str) {
+  const t = String(str).replace(/\x1b\]8;;[^\x07]*\x07/g, "").replace(/\x1b\[[0-9;]*m/g, "");
+  let w = 0;
+  for (const ch of t) {
+    if (ch === "\uFE0F" || ch === "\u200D") continue;
+    w += /\p{Extended_Pictographic}/u.test(ch) ? 2 : 1;
+  }
+  return w;
+}
+module.exports.visibleWidth = visibleWidth;
+
+// A line is a list of segments; some carry cuts, each a rank and a shorter text ("" drops
+// the segment). Cuts apply lowest rank first, only until the line fits in `max` cells.
+function fitSegments(segs, max) {
+  const texts = segs.map((sg) => sg.text);
+  const steps = [];
+  segs.forEach((sg, i) => (sg.cuts || []).forEach((c) => steps.push({ i, rank: c.rank, text: c.text })));
+  steps.sort((a, b) => a.rank - b.rank);
+  for (const st of steps) {
+    if (visibleWidth(texts.join("")) <= max) break;
+    texts[st.i] = st.text;
+  }
+  return texts.join("");
+}
+module.exports.fitSegments = fitSegments;
+
 // ─── dashboard settings: ~/.claude/statusline.json ────────────────────────
 const HIDEABLE = ["effort", "tokens", "diff", "limits", "sync", "remote", "pr", "companion"];
 const DEFAULT_DASH = {
-  theme: "default", links: true, quiet: true, context: { warn: 40, danger: 50 },
+  theme: "default", links: true, quiet: true, gutter: true, context: { warn: 40, danger: 50 },
   palettes: null, hide: [], barWidth: null,
 };
 module.exports.DEFAULT_DASH = DEFAULT_DASH;
@@ -166,6 +194,7 @@ function loadDashConfig(file) {
   if (THEMES[c.theme]) out.theme = c.theme;
   if (typeof c.links === "boolean") out.links = c.links;
   if (typeof c.quiet === "boolean") out.quiet = c.quiet;
+  if (typeof c.gutter === "boolean") out.gutter = c.gutter;
   const cx = c.context || {};
   const ok = (n) => Number.isFinite(n) && n > 0 && n <= 100;
   if (ok(cx.warn) && ok(cx.danger) && cx.warn < cx.danger) out.context = { warn: cx.warn, danger: cx.danger };
@@ -336,7 +365,7 @@ function limitCells(usedPct, elapsedPct, width) {
 }
 module.exports.limitCells = limitCells;
 
-function limitSeg(label, win, windowLen, width, quiet) {
+function limitParts(label, win, windowLen, width, quiet) {
   if (!win || win.used_percentage == null) return null;
   const p = Math.round(win.used_percentage);
   const pace = windowPace(win, windowLen);
@@ -345,9 +374,10 @@ function limitSeg(label, win, windowLen, width, quiet) {
   const glyph ={ fill: `${fillCol}█`, over: `${P.bad}█`, empty: `${P.empty}░`, notch: `${P.fg}│` };
   const barStr = `${P.faint}▕${cells.map((c) => glyph[c]).join("")}${P.reset}${P.faint}▏${P.reset}`;
   const calm = quiet && p < 50 && !cells.includes("over");
-  let seg = `${P.dim}${label}${P.reset} ${barStr} ${calm ? P.dim : pctColor(p)}${p}%${P.reset}`;
-  if (pace) seg += `${P.sep}${P.dim}${fmtDur(pace.remaining)} left${P.reset}`;
-  return seg;
+  return {
+    main: `${P.dim}${label}${P.reset} ${barStr} ${calm ? P.dim : pctColor(p)}${p}%${P.reset}`,
+    left: pace ? `${P.sep}${P.dim}${fmtDur(pace.remaining)} left${P.reset}` : "",
+  };
 }
 
 // ─── cache I/O (git snapshot) ─────────────────────────────────────────────
@@ -452,10 +482,26 @@ process.stdin.on("end", () => {
   const nowMs = Date.now();
   const five = (d.rate_limits || {}).five_hour;
   const fivePace = windowPace(five, 5 * 3600);
+
+  // Lines are collected, fitted to the width Claude Code reports, then printed with the
+  // gutter. Claude Code keeps a small margin of its own, hence the 2 spare cells.
+  const out = [];
+  const gutterW = dash.gutter ? 2 : 0;
+  const room = cols - 2 - gutterW;
+  let pal = null;
+  const emit = () => {
+    const theme = THEMES[dash.theme] || THEMES.default;
+    out.forEach((line, i) => {
+      if (!dash.gutter) return console.log(line);
+      const t = out.length > 1 ? i / (out.length - 1) : 0;
+      const c = pal ? pal.c1.map((v, k) => Math.round(v + (pal.c2[k] - v) * t)) : theme.blue;
+      console.log(`${rgb(...c)}▌${P.reset} ${line}`);
+    });
+  };
   const line4 = (git) => {
     if (hidden.has("companion")) return;
-    console.log(renderLine4(cfg, soul, {
-      hasConfig, hasCommand, cols,
+    out.push(renderLine4(cfg, soul, {
+      hasConfig, hasCommand, cols: cols - gutterW,
       ...git,
       contextPct: (d.context_window && d.context_window.used_percentage) || 0,
       ctxDanger: danger,
@@ -466,110 +512,125 @@ process.stdin.on("end", () => {
   };
 
   // — Line 1 (session): model · effort · context bar · lines changed —
+  // Narrow terminal: drop the token count, then the diff, then the effort.
   const model = (d.model && d.model.display_name) || "Claude";
-  let head = `${P.accent}⏺${P.reset}  ${P.bold}${P.fg}${model}${P.reset}`;
-  const effort = d.effort && d.effort.level;
-  if (!hidden.has("effort")) {
-    if (effort) head += ` ${P.effort}✦ ${effort}${P.reset}`;
-    else if (d.thinking && d.thinking.enabled) head += ` ${P.effort}✦ thinking${P.reset}`;
-  }
+  const l1 = [{ text: `${P.accent}⏺${P.reset}  ${P.bold}${P.fg}${model}${P.reset}` }];
+  const effort = (d.effort && d.effort.level) || (d.thinking && d.thinking.enabled ? "thinking" : null);
+  if (effort && !hidden.has("effort")) l1.push({ text: ` ${P.effort}✦ ${effort}${P.reset}`, cuts: [{ rank: 3, text: "" }] });
 
   const cw = d.context_window || {};
-  let ctxSeg;
   if (cw.used_percentage != null) {
     const pct = Math.round(cw.used_percentage);
     const used = (cw.total_input_tokens || 0) + (cw.total_output_tokens || 0);
     const pctCol = pct >= danger ? P.bad + P.bold : pct >= warn ? P.warn : dash.quiet ? P.dim : P.good;
-    ctxSeg = `${heatBar(pct, barW, warn, danger)} ${pctCol}${pct}%${P.reset}`;
-    if (!hidden.has("tokens")) ctxSeg += `${P.sep}${P.dim}${fmtTokens(used)}/${fmtTokens(cw.context_window_size)}${P.reset}`;
-    if (pct >= danger) ctxSeg += `${P.sep}${P.bad}⚠ /compact${P.reset}`;
+    l1.push({ text: `  ${heatBar(pct, barW, warn, danger)} ${pctCol}${pct}%${P.reset}` });
+    if (!hidden.has("tokens")) {
+      l1.push({ text: `${P.sep}${P.dim}${fmtTokens(used)}/${fmtTokens(cw.context_window_size)}${P.reset}`, cuts: [{ rank: 1, text: "" }] });
+    }
+    if (pct >= danger) l1.push({ text: `${P.sep}${P.bad}⚠ /compact${P.reset}` });
   } else {
-    ctxSeg = `${heatBar(0, barW, warn, danger)} ${P.dim}—${P.reset}`;
+    l1.push({ text: `  ${heatBar(0, barW, warn, danger)} ${P.dim}—${P.reset}` });
   }
 
   const cost = d.cost || {};
   const la = cost.total_lines_added || 0, lr = cost.total_lines_removed || 0;
-  const diffSeg = (la || lr) && !hidden.has("diff") ? `${P.bigSep}${P.good}+${la}${P.reset} ${P.bad}−${lr}${P.reset}` : "";
-
-  console.log(`${head}  ${ctxSeg}${diffSeg}`);
+  if ((la || lr) && !hidden.has("diff")) {
+    l1.push({ text: `${P.bigSep}${P.good}+${la}${P.reset} ${P.bad}−${lr}${P.reset}`, cuts: [{ rank: 2, text: "" }] });
+  }
+  out.push(fitSegments(l1, room));
 
   // — Line 2 (limits): usage bar with a clock notch · % · reset countdown —
+  // Narrow terminal: drop the 7d countdown, then the 5h countdown, then the 7d window.
   const rl = d.rate_limits || {};
-  const limitSegs = hidden.has("limits") ? [] : [
-    limitSeg("5h", rl.five_hour, 5 * 3600, limitW, dash.quiet),
-    limitSeg("7d", rl.seven_day, 7 * 86400, limitW, dash.quiet),
-  ].filter(Boolean);
-  if (limitSegs.length) console.log(`${P.dim}◷${P.reset} ` + limitSegs.join(P.bigSep));
+  if (!hidden.has("limits")) {
+    const p5 = limitParts("5h", rl.five_hour, 5 * 3600, limitW, dash.quiet);
+    const p7 = limitParts("7d", rl.seven_day, 7 * 86400, limitW, dash.quiet);
+    const l2 = [{ text: `${P.dim}◷${P.reset} ` }];
+    if (p5) {
+      l2.push({ text: p5.main });
+      if (p5.left) l2.push({ text: p5.left, cuts: [{ rank: 2, text: "" }] });
+    }
+    if (p7) {
+      l2.push({ text: (p5 ? P.bigSep : "") + p7.main, cuts: p5 ? [{ rank: 3, text: "" }] : [] });
+      if (p7.left) l2.push({ text: p7.left, cuts: [{ rank: 1, text: "" }] });
+    }
+    if (p5 || p7) out.push(fitSegments(l2, room));
+  }
 
   // — Line 3 (git): 📁 launch root [▸ current repo] : branch · dirty · ahead/behind · sync · remote · PR —
+  // Narrow terminal: drop the remote, then the sync age, then the PR's review words, then
+  // the ▸ repo name, then the PR. Branch, changes, and ahead/behind always stay.
   const basename = (p) => p.replace(/[\\/]+$/, "").split(/[\\/]/).pop();
   const norm = (p) => p.replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
   const cwd = (d.workspace && d.workspace.current_dir) || d.cwd || process.cwd();
   const launchDir = (d.workspace && d.workspace.project_dir) || cwd;
-  const pal = (dash.palettes || ROOT_PALETTES).find((p) => p.test(launchDir));
+  pal = (dash.palettes || ROOT_PALETTES).find((p) => p.test(launchDir)) || null;
   const folderDisp = pal ? shimmer(basename(launchDir), pal.c1, pal.c2) : `${P.blue}${basename(launchDir)}${P.reset}`;
   // Per-session git cache: reuse a fresh snapshot, else read git once and store it.
   const gitCacheFile = GIT_CACHE_FILE(d.session_id);
   let snap = readCache(gitCacheFile);
   if (!snap) pruneStaleCaches(claudeDir(), nowMs); // a session's first render tidies up after old ones
   if (!gitCacheFresh(snap, cwd, nowMs, GIT_CACHE_TTL_MS)) {
-    const s = computeGitSnapshot(cwd);
-    snap = { cwd, gitTs: nowMs, g: s.g, topLevel: s.topLevel, branch: s.branch, originUrl: s.originUrl };
+    const sn = computeGitSnapshot(cwd);
+    snap = { cwd, gitTs: nowMs, g: sn.g, topLevel: sn.topLevel, branch: sn.branch, originUrl: sn.originUrl };
     writeCache(gitCacheFile, snap);
   }
   const g = snap.g;
   const topLevel = snap.topLevel;
 
+  const l3 = [{ text: `📁  ${folderDisp}` }];
   // where the session actually is, when it differs from the launch root
-  let hereSeg = "";
   if (topLevel && norm(topLevel) !== norm(launchDir)) {
-    hereSeg = ` ${P.faint}▸${P.reset} ${P.fg}${basename(topLevel)}${P.reset}`;
+    l3.push({ text: ` ${P.faint}▸${P.reset} ${P.fg}${basename(topLevel)}${P.reset}`, cuts: [{ rank: 4, text: "" }] });
   }
 
   if (!g) {
-    console.log(`📁  ${folderDisp}${hereSeg}${P.sep}${P.dim}no repo${P.reset}`);
+    l3.push({ text: `${P.sep}${P.dim}no repo${P.reset}` });
+    out.push(fitSegments(l3, room));
     line4({ hasRepo: false, dirty: 0 });
+    emit();
     return;
   }
 
   const branch = snap.branch;
   const isDefault = branch === "master" || branch === "main";
-  const branchCol = isDefault ? P.fg : P.warn;
-  let line3 = `📁  ${folderDisp}${hereSeg} ${P.faint}:${P.reset} ${branchCol}${branch}${P.reset}`;
-
-  if (g.dirty > 0) line3 += `${P.sep}${P.warn}✚ ${g.dirty}${P.reset}`;
+  l3.push({ text: ` ${P.faint}:${P.reset} ${isDefault ? P.fg : P.warn}${branch}${P.reset}` });
+  if (g.dirty > 0) l3.push({ text: `${P.sep}${P.warn}✚ ${g.dirty}${P.reset}` });
 
   const origin = parseRemote(snap.originUrl);
-
   if (!g.upstream) {
-    line3 += `${P.sep}${origin ? `${P.warn}unpushed branch${P.reset}` : `${P.dim}local only${P.reset}`}`;
+    l3.push({ text: `${P.sep}${origin ? `${P.warn}unpushed branch${P.reset}` : `${P.dim}local only${P.reset}`}` });
   } else {
     const fly = [];
     if (g.ahead > 0) fly.push(`${P.warn}⇡${g.ahead}${P.reset}`);
     if (g.behind > 0) fly.push(`${P.bad}⇣${g.behind}${P.reset}`);
-    if (fly.length) line3 += P.sep + fly.join(" ");
-    else if (g.dirty === 0) line3 += `${P.sep}${dash.quiet ? P.dim : P.good}✓ synced${P.reset}`;
-    if (g.syncAge && !hidden.has("sync")) line3 += `${P.sep}${P.dim}↻ ${g.syncAge}${P.reset}`;
+    if (fly.length) l3.push({ text: P.sep + fly.join(" ") });
+    else if (g.dirty === 0) l3.push({ text: `${P.sep}${dash.quiet ? P.dim : P.good}✓ synced${P.reset}` });
+    if (g.syncAge && !hidden.has("sync")) l3.push({ text: `${P.sep}${P.dim}↻ ${g.syncAge}${P.reset}`, cuts: [{ rank: 2, text: "" }] });
   }
   if (origin && !hidden.has("remote")) {
     const label = `${origin.host === "github.com" ? "gh" : origin.host}:${origin.owner}/${origin.name}`;
-    line3 += `${P.sep}${P.faint}${link(`https://${origin.host}/${origin.owner}/${origin.name}`, label)}${P.reset}`;
+    l3.push({
+      text: `${P.sep}${P.faint}${link(`https://${origin.host}/${origin.owner}/${origin.name}`, label)}${P.reset}`,
+      cuts: [{ rank: 1, text: "" }],
+    });
   }
 
   if (d.pr && d.pr.number && !hidden.has("pr")) {
     const prCol = { approved: P.good, pending: P.warn, changes_requested: P.bad, draft: P.dim }[d.pr.review_state] || P.dim;
     const prState = d.pr.review_state ? " " + d.pr.review_state.replace(/_/g, " ") : "";
     const label = d.pr.kind === "mr" ? `MR !${d.pr.number}` : `PR #${d.pr.number}`;
-    line3 += `${P.sep}${prCol}${link(d.pr.url, `${label}${prState}`)}${P.reset}`;
+    const pr = (text) => `${P.sep}${prCol}${link(d.pr.url, text)}${P.reset}`;
+    l3.push({ text: pr(label + prState), cuts: [{ rank: 3, text: pr(label) }, { rank: 5, text: "" }] });
   }
-
-  console.log(line3);
+  out.push(fitSegments(l3, room));
 
   // — Line 4: animal companion (canned lines; no model call) —
   line4({
     hasRepo: true, dirty: g.dirty, ahead: g.ahead, behind: g.behind,
     upstream: !!g.upstream, branch,
   });
+  emit();
 });
 }
 

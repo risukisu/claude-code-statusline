@@ -44,8 +44,8 @@ function render({ payload = {}, git, config, soul, env = {} } = {}) {
   }
 }
 
-// Strip colours and OSC 8 link wrappers, leaving what the eye reads.
-const plain = (s) => s.replace(/\x1b\[[0-9;]*m/g, "").replace(/\x1b\]8;;[^\x07]*\x07/g, "");
+// Strip colours, OSC 8 link wrappers, and the ▌ gutter, leaving what the eye reads.
+const plain = (s) => s.replace(/\x1b\[[0-9;]*m/g, "").replace(/\x1b\]8;;[^\x07]*\x07/g, "").replace(/^▌ /, "");
 const rgbCode = ([r, g, b]) => `\x1b[38;2;${r};${g};${b}m`;
 // Line 3 by its 📁 prefix (line 2 only prints when rate limits are present).
 const L3 = (lines) => lines.find((l) => plain(l).startsWith("📁"));

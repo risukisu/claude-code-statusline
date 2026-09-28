@@ -95,8 +95,19 @@ function spans(line) {
 const MONO = "'Cascadia Mono', 'SF Mono', ui-monospace, Menlo, Consolas, 'Liberation Mono', monospace";
 const SANS = "-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif";
 
-function textLine(line, x, y, size) {
-  const t = spans(line).map((s) =>
+// The gutter ▌ is drawn as a bar the full line height, as terminal cells butt together;
+// a font's ▌ glyph is shorter and would leave gaps between lines.
+function textLine(line, x, y, size, lh = 31) {
+  const sp = spans(line);
+  let gutter = "";
+  if (sp[0] && sp[0].text.startsWith("▌")) {
+    gutter = `<rect x="${x}" y="${y - Math.round(lh * 0.72)}" width="${Math.round(size * 0.45)}" height="${lh}" fill="${sp[0].fg}"/>`;
+    sp[0] = { ...sp[0], text: " " + sp[0].text.slice(1) };
+  }
+  return gutter + textSpans(sp, x, y, size);
+}
+function textSpans(sp, x, y, size) {
+  const t = sp.map((s) =>
     `<tspan fill="${s.fg}"${s.bold ? ' font-weight="700"' : ""}${s.italic ? ' font-style="italic"' : ""}>${esc(s.text)}</tspan>`).join("");
   return `<text x="${x}" y="${y}" font-family="${MONO}" font-size="${size}" xml:space="preserve">${t}</text>`;
 }
@@ -214,7 +225,8 @@ function main() {
   ].map((r) => {
     const ctx = { hasRepo: true, dirty: r.git.dirty, ahead: r.git.ahead, behind: r.git.behind, upstream: true, branch: r.git.branch, contextPct: r.pct, ...LIMITS };
     const lines = render({ now: findNow(r.animal, ctx, r.want) + 5_000, animal: r.animal, git: r.git, ctxPct: r.pct });
-    return { state: r.state, line: lines[lines.length - 1] };
+    // Shown on its own, line 4 doesn't need the gutter that ties the four lines together.
+    return { state: r.state, line: lines[lines.length - 1].replace(/^(\x1b\[[0-9;]*m)?▌(\x1b\[0m)? /, "") };
   });
   fs.writeFileSync(path.join(OUT, "companions.svg"), companions(rows));
 

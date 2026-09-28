@@ -2,6 +2,7 @@
 const { test } = require("node:test");
 const assert = require("node:assert");
 const { renderLine4 } = require("../statusline.js");
+const { plain } = require("./helpers.js");
 
 const soul = { work: ["W0"], ambient: ["A0", "A1"], voice: "", rules: "" };
 const base = { hasRepo: true, dirty: 0, contextPct: 0, cols: 120 };
@@ -20,13 +21,14 @@ test("mode off with config → bare emoji", () => {
   const out = renderLine4({ mode: "off", animal: "fox" }, null, { ...base, hasConfig: true }, 0);
   assert.strictEqual(out, "🦊");
 });
-test("canned mode renders emoji + an ambient line when nothing is notable", () => {
+test("canned mode speaks: connector, emoji, then the line in italics", () => {
   const out = renderLine4({ mode: "canned", animal: "fox" }, soul, { ...base, hasConfig: true }, 0);
-  assert.match(out, /^🦊 ~ A0$/);
+  assert.strictEqual(plain(out), "╰─ 🦊 A0");
+  assert.ok(out.includes("\x1b[3m"), "the spoken line is italic");
 });
 test("canned mode picks a work line when the repo is dirty", () => {
   const out = renderLine4({ mode: "canned", animal: "turtle" }, soul, { ...base, hasConfig: true, dirty: 3 }, 0);
-  assert.match(out, /^🐢 ~ W0$/);
+  assert.strictEqual(plain(out), "╰─ 🐢 W0");
 });
 test("canned mode with a missing soul degrades to the emoji", () => {
   const out = renderLine4({ mode: "canned", animal: "squirrel" }, null, { ...base, hasConfig: true }, 0);

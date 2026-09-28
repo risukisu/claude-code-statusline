@@ -15,7 +15,7 @@ test("render self-terminates when stdin never closes", async () => {
   const child = spawn("node", ["statusline.js"], {
     cwd: ROOT,
     stdio: ["pipe", "ignore", "ignore"], // stdin is a pipe the parent holds open — never ended
-    env: { ...process.env, STATUSLINE_WATCHDOG_MS: "300" },
+    env: { ...process.env, STATUSLINE_WATCHDOG_MS: "300", CLAUDE_CONFIG_DIR: require("node:os").tmpdir() },
   });
   // Deliberately never write to nor .end() child.stdin → the 'end' event never fires.
   const exitedOnItsOwn = await new Promise((resolve) => {

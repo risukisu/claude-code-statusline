@@ -1,72 +1,104 @@
 # Changelog
 
-## Unreleased
+Notable changes to claude-code-statusline, newest first. The project follows
+[Semantic Versioning](https://semver.org): patch releases fix things, minor releases add
+segments, soul sections, or options without breaking an existing install, and a major
+release changes the soul format, the config file, or the install layout.
 
-### Removed
+## [1.1.0] — 2026-09-28
 
-- **The live "react" companion mode, and with it every model call in this project.**
-  React mode forwarded each prompt you submitted to a background
-  `claude -p --safe-mode --no-session-persistence --model haiku` child so it could reply
-  with a one-line quip. That child was a complete Claude Code session: it received your
-  prompt as its task, ran with your `~/.claude/settings.json` permission rules, inherited
-  the working directory, and — because of `--no-session-persistence` — wrote no transcript.
-  Given a prompt that read like an instruction it did the work instead of joking about it.
-  In a controlled run inside a project folder, asked to create a file, the child created it
-  (under both 2.1.267 and 2.1.268) and replied "file made!"; the same command run from a
-  folder under `~/.claude` was stopped by a permission check, so the outcome depends on
-  where the session happens to be. Two earlier incidents of source files being rewritten
-  with no transcript matched its timing to the second and echoed the prompt text.
+### Added
 
-  The mode is gone rather than patched. `statusline.js` now contains no `child_process`
-  call to `claude`, no transcript reader, no prompt hashing, no circuit breaker and no
-  per-session comment cache. `MODES` is `off | canned`; a leftover `"mode": "react"` in
-  `~/.claude/statusline-soul.json` is read as `canned`. `statusline.js --hook` and
-  `--gen` remain as silent no-ops so an old `UserPromptSubmit` hook entry prints nothing
-  into Claude's context; `settings.snippet.json` no longer ships a hook at all. The
-  `## react` section was dropped from the shipped souls and `/animal` no longer offers it.
+- **A settings file.** `~/.claude/statusline.json` holds the theme, quiet mode, links,
+  context thresholds, workspace palettes, hidden segments, and bar width. Every key is
+  optional, a bad value falls back to its default, and upgrades never overwrite the file.
+  [`examples/statusline.json`](examples/statusline.json) lists every key.
+- **Clickable links.** `gh:owner/name` opens the repo and the PR badge opens the PR, in
+  terminals that support OSC 8 hyperlinks. Credentials in an https remote never reach the
+  link. GitLab merge requests read `MR !12`.
+- **Themes.** `high-contrast` lifts the greys; `colorblind` swaps green and red for
+  blue, yellow, and vermillion. The standard `NO_COLOR` variable prints plain text.
+- **Quiet mode, on by default.** Healthy segments such as `✓ synced` and low usage are
+  dimmed, so what needs attention stands out.
+- **A workspace gutter.** A `▌` down the left edge in the workspace colours ties the four
+  lines into one block. `"gutter": false` turns it off.
+- **Narrow terminals.** Each line fits the width Claude Code reports: line 3 drops the
+  remote, then the sync age, the PR's review words, the `▸` repo name, and the PR; lines 1
+  and 2 drop the token count, diff, effort, and countdowns. Branch, changes, ahead/behind,
+  the context %, and the `/compact` hint always stay.
+
+### Changed
+
+- **The context bar warns earlier.** Amber from 30%, orange at 40%, red from 50%, where a
+  `⚠ /compact` hint appears. Both lines are settings. The companion's `context` lines
+  start at the same 50% (they started at 70%).
+- **Limit bars replace the pace arrows.** Line 2 draws each window as a bar: the fill is
+  what you've used, a `│` notch marks how much of the window's time has passed, and fill
+  past the notch is red overspend. `⇡N` and `⇣N` are gone from line 2.
+- **The companion speaks.** Line 4 reads `╰─ 🦊 line` with the line in italics, instead
+  of `🦊 ~ line`.
+
+### Docs
+
+- The README opens with an animated project card and explains, in plain words, how to
+  read each line: why the context bar turns red at 50%, how a limit bar's notch works, and
+  what `⇡` and `⇣` mean.
+
+### Upgrading From 1.0.0
+
+- Copy `statusline.js` into `~/.claude/` again. Souls and `/animal` are unchanged.
+- If you edited `ROOT_PALETTES` in the script, move those entries to `palettes` in
+  `~/.claude/statusline.json`.
+
+## [1.0.0] — 2026-09-28
+
+The first tagged release.
+
+### What Ships
+
+- Line 1, session: model, reasoning effort, a blue → amber → red context bar,
+  tokens used of the window, and lines added and removed.
+- Line 2, limits: 5-hour and 7-day usage, pace against the clock (`⇡` burning fast,
+  `⇣` under pace), and time until each window resets.
+- Line 3, git: the launch folder in its own shimmering workspace colour, the repo
+  you're in when it differs, branch, uncommitted files, ahead/behind or `✓ synced`,
+  age of the upstream's last commit, the origin remote, and the open PR's review state.
+- Line 4, companion (optional, off by default): a squirrel, fox, or turtle that
+  comments on your work with hand-written lines. Pick one with `/animal`.
+- No network, no API keys, no model calls, no dependencies. `node` and a few local
+  `git` reads.
+
+### New Since the Pre-Release Builds
+
+- **Companions notice what's going on.** Souls gained nine state sections: `dirty`,
+  `ahead`, `behind`, `context`, `limits`, `synced`, `branch`, `norepo`, and `night`.
+  Lines can carry live values: `{dirty}`, `{ahead}`, `{behind}`, `{ctx}`, `{limit}`,
+  `{branch}`, and `{dirty:file}` for "1 file" / "3 files". While you're busy, two lines
+  in three speak to the state and the third is idle chatter, so the character still
+  shows. Old souls with only `work` and `ambient` keep working.
+- **Eight times the lines.** Each shipped soul went from 8 lines to 66–68.
+- **`node statusline.js --version`** prints the installed version.
 
 ### Fixed
 
-- **Status-line renders could leak into permanently-hung processes.** `main()`
-  blocked on stdin `end`, but Claude Code cancels a superseded render by orphaning
-  the process without closing stdin, so `end` never fired and the `node` process
-  hung forever at 0% CPU. On a busy machine with several sessions these piled up
-  (observed: 49 orphans, oldest ~40h, ~1.7GB resident) until the whole system
-  paged and even terminal input lagged. `main()` now arms a self-terminating
-  watchdog (like `hook()` already had), so an orphaned render exits on its own.
+- **Cache files piled up in `~/.claude`.** Each session's git snapshot cache stayed
+  forever, and on Windows a failed atomic write left its temp file behind (one machine
+  had 88 caches and 322 temp files). A failed write now removes its temp file, and a
+  session's first render sweeps `statusline-git.*` caches idle for a day and temp files
+  older than a minute. It touches no other file.
+- **Cancelled renders hung forever.** Claude Code orphans a superseded render without
+  closing its stdin; the process now exits on its own after 8 seconds.
+- **Every render ran git 4–5 times.** The git snapshot is cached per session for 3
+  seconds, and the recommended `refreshInterval` is `10`.
 
-- **Each render shelled out to git 4–5× — a subprocess storm.** `git status`,
-  `rev-parse`, `config`, and `log` ran on every render; at the minimum
-  `refreshInterval` across multiple sessions that was several `node`+git spawns
-  per second. The git snapshot is now cached per session with a short TTL, so
-  rapid successive renders reuse it instead of re-shelling out. Recommended
-  `refreshInterval` raised from `1` to `10` (it is in seconds and runs *in
-  addition* to event-driven renders; each render is a fresh process).
+### Upgrading From a Pre-1.0 Checkout
 
-- **React `claude -p` generator child is now force-killed on timeout.** It ran
-  with the default (ignorable) `SIGTERM`; it now uses `SIGKILL` with an
-  env-overridable timeout so a stuck generation can't linger.
+- Copy `statusline.js`, `souls/`, and `commands/animal.md` into `~/.claude/` again.
+- An experimental live companion mode existed before 1.0 and is gone. If your
+  `~/.claude/statusline-soul.json` still names it, the companion reads as `off`; run
+  `/animal` to pick again.
+- If `~/.claude/settings.json` has a `UserPromptSubmit` hook running
+  `statusline.js --hook`, delete that entry. It does nothing now.
 
-- **React companion could burn API usage when multiple sessions were open.**
-  The react-mode cache was a single machine-global file keyed by one prompt
-  hash, polled by every session's once-per-second status-line render. With two
-  or more Claude Code sessions open, each render saw *another* session's cached
-  prompt, judged it "new," and fired a `claude -p` (Haiku) call — ping-ponging
-  continuously even while idle, and sometimes showing one session's comment in
-  another.
-
-  React generation is now driven by a **`UserPromptSubmit` hook** instead of the
-  render loop:
-  - The status line is **read-only** — it never spawns a generation.
-  - Generation fires **once per submitted prompt**, scoped to that session.
-  - The cache is **per-session** (keyed by `session_id`); sessions can't read or
-    trigger each other's.
-  - A **recursion guard** stops the companion's own `claude -p` call from
-    re-triggering the hook.
-  - A **circuit breaker** caps bursts (more than 20 generations in 2 minutes →
-    30-minute cooldown) as a hard backstop, with a quiet "resting" note on line 4.
-
-  **React mode now requires registering the `UserPromptSubmit` hook** — see
-  [`settings.snippet.json`](settings.snippet.json) and the Animal companion
-  section of the README. `off` and `canned` modes need no hook and make no model
-  calls.
+[1.1.0]: https://github.com/risukisu/claude-code-statusline/releases/tag/v1.1.0
+[1.0.0]: https://github.com/risukisu/claude-code-statusline/releases/tag/v1.0.0

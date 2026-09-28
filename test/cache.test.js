@@ -29,3 +29,13 @@ test("readCache malformed → null, never throws", () => {
 test("writeCache to an unwritable path never throws", () => {
   assert.doesNotThrow(() => writeCache(path.join(tmp("no-such-dir"), "x", "y.json"), { a: 1 }));
 });
+test("a failed rename removes its temp file instead of leaving it behind", () => {
+  const target = tmp("is-a-dir");
+  fs.mkdirSync(target, { recursive: true }); // renaming a file over a directory always fails
+  try {
+    writeCache(target, { a: 1 });
+    assert.strictEqual(fs.existsSync(`${target}.${process.pid}.tmp`), false, "orphaned temp file left behind");
+  } finally {
+    fs.rmSync(target, { recursive: true, force: true });
+  }
+});

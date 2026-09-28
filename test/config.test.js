@@ -17,13 +17,7 @@ test("reads mode and animal", () => {
   assert.deepStrictEqual(loadConfig(p), { mode: "canned", animal: "fox" });
   fs.unlinkSync(p);
 });
-test("legacy react mode degrades to canned (the live-Haiku path was removed)", () => {
-  const p = tmp("legacy.json");
-  fs.writeFileSync(p, JSON.stringify({ mode: "react", animal: "turtle" }));
-  assert.deepStrictEqual(loadConfig(p), { mode: "canned", animal: "turtle" });
-  fs.unlinkSync(p);
-});
-test("invalid values fall back", () => {
+test("unknown mode or animal falls back to off/squirrel", () => {
   const p = tmp("bad.json");
   fs.writeFileSync(p, JSON.stringify({ mode: "loud", animal: "dragon" }));
   assert.deepStrictEqual(loadConfig(p), { mode: "off", animal: "squirrel" });

@@ -34,3 +34,21 @@ test("emits at least three lines for the sample", () => {
   const out = run(SAMPLE).replace(/\n$/, "");
   assert.ok(out.split("\n").length >= 4, "expected >=4 lines");
 });
+
+test("line 4 speaks in character when a companion is configured", () => {
+  const cfgDir = fs.mkdtempSync(path.join(os.tmpdir(), "slchar4-"));
+  try {
+    fs.mkdirSync(path.join(cfgDir, "souls"));
+    fs.copyFileSync(path.join(ROOT, "souls/fox.md"), path.join(cfgDir, "souls/fox.md"));
+    fs.writeFileSync(path.join(cfgDir, "statusline-soul.json"), JSON.stringify({ mode: "canned", animal: "fox" }));
+    const out = execFileSync("node", ["statusline.js"], {
+      cwd: ROOT, input: SAMPLE, encoding: "utf8", timeout: 5000,
+      env: { ...process.env, CLAUDE_CONFIG_DIR: cfgDir },
+    }).replace(/\x1B\[[0-9;]*m/g, "");
+    const line4 = out.trimEnd().split("\n").pop();
+    assert.match(line4, /^▌ ╰─ 🦊 \S/);
+    assert.doesNotMatch(line4, /\{[a-z]+(:[a-z]+)?\}/, "no unfilled placeholder may reach the screen");
+  } finally {
+    fs.rmSync(cfgDir, { recursive: true, force: true });
+  }
+});

@@ -1,0 +1,13 @@
+{
+  "theme": "default",
+  "quiet": true,
+  "links": true,
+  "gutter": true,
+  "context": { "warn": 40, "danger": 50 },
+  "palettes": [
+    { "match": "ai_workspace_personal", "from": "#06b6d4", "to": "#4ade80" },
+    { "match": "ai_workspace_appsilon", "from": "#f59e0b", "to": "#fde68a" }
+  ],
+  "hide": [],
+  "barWidth": 20
+}

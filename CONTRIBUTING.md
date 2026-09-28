@@ -1,135 +1,161 @@
-# Contributing — working on claude-code-statusline
+# Contributing to claude-code-statusline
 
-This guide is for developing **on** this repo. If you're an agent asked to **install** the tool on a user's machine, read [`AGENTS.md`](AGENTS.md) instead.
+This guide is for working **on** this repo. If you're an agent asked to **install** the status line on someone's machine, read [`AGENTS.md`](AGENTS.md) instead.
 
----
+## What It Is
 
-## What is this?
+A zero-dependency Node script that Claude Code runs as its status line. It prints up to four lines:
 
-**claude-code-statusline** is a zero-dependency Node.js status line for Claude Code. It renders up to four lines at the bottom of the terminal:
-- **Line 1 (session):** model, effort level, context usage
-- **Line 2 (limits):** rate-limit consumption & pace vs. clock
-- **Line 3 (git):** branch, dirty files, commits ahead/behind, origin remote, PR status
-- **Line 4 (companion, optional):** an animal character (squirrel/fox/turtle) with hand-written lines keyed to your git/context state
+- **Line 1, session:** model, effort, context bar, lines changed
+- **Line 2, limits:** 5-hour and 7-day rate limits, pace against the clock, reset countdowns
+- **Line 3, git:** launch folder, current repo, branch, changes, ahead/behind, remote, PR
+- **Line 4, companion (optional):** a squirrel, fox, or turtle with hand-written lines picked by state
 
-**Core principle:** no dependencies, no API calls, no transcript reads — ever. (A live "react" mode that ran `claude -p` per prompt existed until the Unreleased version and was removed; see CHANGELOG.)
+**The rule that doesn't bend:** no dependencies, no network, no model calls, no transcript reads. A feature that needs any of those doesn't belong here.
 
----
+## Setup
 
-## Prerequisite: Node.js
+Node 18 or newer. There's nothing to install; tests use the built-in `node:test` and `node:assert`.
 
 ```bash
-node --version   # any recent version (v18+)
+node --test            # the whole suite, from the repo root; well under a second
+node --test test/lines.test.js
 ```
 
-No `npm install` — there are no dependencies. Tests use Node's built-in `node:test` + `node:assert`.
-
----
-
-## Files you'll touch
+## Files You'll Touch
 
 | Path | Purpose |
 |---|---|
-| `statusline.js` | the core — renders the lines (`--hook`/`--gen` are inert legacy flags) |
-| `souls/` | three character files (`squirrel.md`, `fox.md`, `turtle.md`); edit freely |
-| `commands/animal.md` | the `/animal` slash-command definition (Claude Code reads it; don't modify for logic) |
+| `statusline.js` | the whole program |
+| `souls/` | the three companions, one markdown file each |
+| `commands/animal.md` | the `/animal` slash command Claude Code runs |
 | `settings.snippet.json` | the `statusLine` block users merge into `~/.claude/settings.json` |
-| `test/` | `node:test` unit + characterization tests |
-| `examples/` | sample JSON payload + PowerShell workspace launchers |
-| `AGENTS.md` | install playbook for agents · `README.md` | user docs |
+| `test/` | `node:test` suite, one file per concern |
+| `examples/` | a sample stdin payload and the PowerShell workspace launchers |
+| `assets/readme/` | README visuals, generated from real renders by `assets/readme/source/` |
 
----
-
-## Running tests
-
-```bash
-node --test            # all tests (run from the repo root)
-node --test test/config.test.js   # a single file
-```
-
-Expected: all **~38** tests pass, in well under a second. No network, no setup.
-
----
-
-## Architecture
+## How the Code Is Laid Out
 
 `statusline.js` is one file in three layers:
-- **Top:** requires + constants (EMOJI, MODES, timeouts, file-path helpers).
-- **Middle:** pure, exported helpers (`parseSoul`, `loadConfig`, `renderLine4`, `evaluateBudget`, …) — each has a `module.exports.name = name;` line and is unit-tested.
-- **Bottom:** `main()`, dispatched at the end by `if (require.main === module) { … }`; the legacy `--hook`/`--gen` flags exit 0 in silence.
 
-### Execution path (read this before touching line 4)
+- **Top:** constants and file-path helpers (`VERSION`, `EMOJI`, `MODES`, timeouts, cache paths), the soul parser, and the `THEMES` table.
+- **Middle:** pure helpers, each exported with `module.exports.name = name` and unit-tested: `parseSoul`, `fillLine`, `pickCanned`, `renderLine4`, `loadConfig`, `loadDashConfig`, `heatRGB`, `limitCells`, `gitCacheFresh`, `pruneStaleCaches`, and friends.
+- **Bottom:** `main()`, run when the file is executed directly. `--version` prints the version; any other argument exits silently, so a stale hook entry can never paste status lines into a conversation.
 
-There is exactly one: **`main()` — the render path.** Claude Code runs it on every status-line refresh. It reads the stdin JSON, gathers git info (cached per session), loads config + soul, and prints lines 1–4. Line 4 is chosen by `renderLine4()` from the soul's hand-written `work`/`ambient` lists — **pure, synchronous, no model call, no transcript read.**
+### The Render Path
 
-`statusline.js --hook` and `--gen` still exist only as silent no-ops. They were the entry points of the removed live "react" mode, which forwarded every submitted prompt to a background `claude -p --model haiku` child. That child was a full Claude Code session with the user's permission rules and could act on the prompt (in a controlled run inside a project folder it created the file it was asked for; two unexplained file rewrites matched its timing exactly), so the whole path was deleted rather than patched. Do not reintroduce a model call anywhere in this file.
+`main()` is the only execution path. Claude Code runs it after each message and every `refreshInterval` seconds. It reads the stdin JSON, loads `~/.claude/statusline.json` and applies its theme, loads the companion config and soul, reads git (from the per-session cache when it's under 3 seconds old), and prints the lines. Each line is built as a list of segments; `fitSegments()` applies each segment's ranked cuts until the line fits `COLUMNS`, and the gutter is added last. A watchdog ends the process after 8 seconds, because Claude Code cancels a superseded render by orphaning it with stdin still open.
 
-### Key design decisions
+A session's first render (no cache file yet) sweeps `statusline-git.*` caches idle for a day and temp files older than a minute. The sweep matches that one filename pattern and nothing else.
 
-1. **No dependencies** — Node builtins only (`fs`, `path`, `child_process`, `crypto`).
-2. **Render-only, no model calls** — see above; this is the core safety property.
-3. **Per-session isolation** — `GIT_CACHE_FILE(session_id)` via `sessionKey()`, so parallel Claude Code windows never read each other's git snapshot.
-4. **Atomic writes** — cache written to a temp file then renamed.
-5. **Souls as markdown** — each animal is a plain `.md` users can edit.
-6. **Graceful degradation** — missing soul → emoji only; missing git → launch folder, no git info.
+### How Line 4 Picks a Line
 
----
+`pickCanned(soul, ctx, now)` divides wall-clock time into 30-second slots.
+
+- **Notable states** (`context`, `limits`, `behind`, `dirty`, `ahead`): two slots in three rotate through the states that hold, plus the generic `work` lines, which also stand in for a state the soul has no section for. The third slot is `ambient`.
+- **Calm states** (`night`, `norepo`, `synced`, `branch`): when nothing notable holds, the calm states take turns with `ambient`.
+- `fillLine()` fills placeholders; a line whose placeholder has no value is dropped from the pool.
+- The `context` state starts at the context danger line (`ctxDanger`, 50% by default), the same point where the bar turns red.
+
+Everything is pure and synchronous, so a test pins `now` and gets the same line every time.
+
+## Colours, Themes, and Settings
+
+Every colour comes from one entry in `THEMES`. `setTheme()` turns the active theme into ready-made escape codes on `P` (`P.warn`, `P.dim`, `P.reset`, …), and render code only ever writes `${P.name}`. With `NO_COLOR` set, every entry on `P` is an empty string and the same templates print plain text. To add a theme, add an entry to `THEMES` with the same keys; `heat` holds the five context-bar anchors.
+
+`loadDashConfig()` reads `~/.claude/statusline.json` and validates each key on its own, so one bad value never discards the rest. A new setting needs a default in `DEFAULT_DASH`, a check in `loadDashConfig()`, a test in `dashconfig.test.js`, and a row in the README's settings table.
+
+## Editing Souls
+
+A soul is `souls/<animal>.md`: a header, then one bullet list per section. Unknown sections and non-bullet lines are ignored.
+
+```markdown
+# Fox 🦊
+voice: clever, sly, lightly sassy
+rules: one line, <= 80 chars, never mean, no emoji (the 🦊 is added)
+
+## ambient
+- the henhouse can wait. i'm comfortable.
+
+## dirty
+- {dirty:file} dirty and no commit. living dangerously.
+```
+
+| Section | Fires when | Placeholder |
+|---|---|---|
+| `ambient` | idle, and every third slot while busy | |
+| `work` | any notable state | |
+| `dirty` | uncommitted changes | `{dirty}` |
+| `ahead` | unpushed commits | `{ahead}` |
+| `behind` | upstream has new commits | `{behind}` |
+| `context` | context at the danger line (50% by default) | `{ctx}` |
+| `limits` | 5-hour window at 80%, or pace 15+ ahead of the clock | `{limit}` |
+| `synced` | clean and even with upstream | |
+| `branch` | not on `main`/`master` | `{branch}` |
+| `norepo` | outside a git repo | |
+| `night` | 00:00–04:59 local time | |
+
+`{key:noun}` adds a plural: `{ahead:commit}` → "1 commit" / "2 commits". `test/soul.test.js` checks every shipped line: 80 characters at most with worst-case values filled in, no emoji, no duplicates, only known placeholders, at least 12 ambient lines and 4 per other section.
 
 ## Tests
 
 | File | Covers |
 |---|---|
-| `characterization.test.js` | locks lines 1–3 output (black-box, via stdin/stdout) so refactors can't regress |
-| `config.test.js` | `loadConfig` + safe fallbacks |
-| `soul.test.js` | soul markdown parsing; all shipped souls parse |
-| `lines.test.js` | `pickCanned` / `truncate` |
-| `render-line4.test.js` | the line-4 dispatcher, install nudge, canned/off states |
-| `cache.test.js` | atomic cache I/O (git snapshot) |
-| `sessionkey.test.js` | per-session cache-key isolation |
-| `gitcache.test.js`, `gitcache-write.test.js` | git snapshot TTL + write path |
-| `watchdog.test.js` | an orphaned render self-terminates |
-| `legacy-entrypoints.test.js` | `--hook` / `--gen` exit 0 in silence and spawn nothing |
+| `characterization.test.js` | lines 1–3 end to end through stdin/stdout, and line 4 wiring |
+| `lines.test.js` | `pickCanned` rotation, states, placeholders; `fillLine`; `truncate` |
+| `soul.test.js` | soul parsing, and the quality rules for the shipped souls |
+| `render-line4.test.js` | the line-4 dispatcher, install nudge, off/canned |
+| `config.test.js` | `loadConfig` and its fallbacks |
+| `cache.test.js` | atomic cache writes, including temp-file cleanup on failure |
+| `prune.test.js` | the stale-cache sweep and what it must never touch |
+| `gitcache.test.js`, `gitcache-write.test.js` | git snapshot TTL and reuse |
+| `sessionkey.test.js` | per-session cache isolation |
+| `watchdog.test.js` | an orphaned render exits on its own |
+| `flags.test.js` | `--version`, and silence for every other argument |
+| `dashconfig.test.js` | `statusline.json` loading and per-key fallbacks |
+| `heat.test.js` | the front-loaded context heat scale and the `/compact` hint |
+| `limitbar.test.js` | limit bars: fill, notch, overspend colouring |
+| `look.test.js` | themes, quiet mode, clickable links, `NO_COLOR`, `hide` |
+| `fit.test.js` | narrow-terminal cuts, `visibleWidth`, and the gutter |
+| `version.test.js` | `VERSION` matches the newest CHANGELOG entry |
 
-Tests are isolated (no side effects) and fast. When you add an exported helper, add a test for it.
+Tests that run the script set `CLAUDE_CONFIG_DIR` to a temp folder; `test/helpers.js` has a `render()` that does it for you, with an optional settings file, companion, and seeded git state. **Do the same for any manual run** while you work on caching or cleanup code: a bare `node statusline.js` reads and tidies your real `~/.claude`.
 
-If `characterization.test.js` fails, you changed lines 1–3 output — make sure it was intentional, then update the assertion.
+If `characterization.test.js` fails, you changed what lines 1–3 print. Make sure you meant to, then update the assertion.
 
----
+## README Visuals
 
-## Editing souls (squirrel/fox/turtle)
+`assets/readme/live.svg`, `live.gif`, and `companions.svg` are drawn from real renders. `build.js` feeds staged payloads through `statusline.js` in a throwaway config folder with a pinned clock and turns the ANSI output into SVG. `rasterize.py` screenshots the frames in headless Chromium and builds the GIF.
 
-Each soul is `souls/<animal>.md`:
-
-```markdown
-# Squirrel 🐿️
-voice: manic, enthusiastic, scattered — a cheerful hoarder
-rules: one line, <= 80 chars, never mean, no emoji (the 🐿️ is added)
-
-## work
-- branch buried somewhere? dig one up before you forget.
-
-## ambient
-- buried 47 acorns this morning. forgot where 31 are.
-
+```bash
+node assets/readme/source/build.js --frames /tmp/sl-frames
+python assets/readme/source/rasterize.py gif /tmp/sl-frames assets/readme/live.gif
 ```
 
-- `## work` — shown when the repo is dirty or context is high (>70%)
-- `## ambient` — shown when idle; rotates ~every 30s
+The GIF step needs Python with Pillow and Playwright (`playwright install chromium`). Rebuild after changing what the lines print or which soul lines the demo uses.
 
-Aim for ≥4 lines per section. The parser is tolerant.
+`assets/readme/tile.svg` is the project card at the top of the README: a CSS-animated SVG (no script, system fonts, so it plays inside a GitHub `<img>`) whose art is a real render acting out its four lines in 3-second beats. `tile.js` builds it from a list of pieces, each with a beat, a start time, and a resting and an active look; `tile.png` is the static fallback for reduced motion.
 
----
+```bash
+node assets/readme/source/tile.js
+python assets/readme/source/rasterize.py png assets/readme/tile-static.svg assets/readme/tile.png
+```
 
-## Common tasks
+## Releasing
 
-**Add a line-4 feature:** add an exported pure helper → write a failing test → implement → wire into `renderLine4()` (render-only logic; a feature that needs a model call does not belong in this project) → run tests → commit.
+Versions follow [semantic versioning](https://semver.org):
 
-**"A user still has `mode: react` or the old `UserPromptSubmit` hook":** both are harmless. `loadConfig` maps `react` to `canned`; `statusline.js --hook` exits 0 without output. Suggest they drop the hook entry from `~/.claude/settings.json` for tidiness.
+- **Patch** (`1.0.1`): bug fixes, soul lines added or reworded.
+- **Minor** (`1.1.0`): a new segment, soul section, placeholder, or option that leaves existing installs working.
+- **Major** (`2.0.0`): a change to the soul format, `statusline-soul.json`, the settings block, or the install layout that makes users redo something.
 
-**"Works locally but not in Claude Code":** verify the `command` path in `settings.json` (Windows: full path, forward slashes), then restart.
+To cut a release:
 
----
+1. Bump `VERSION` in `statusline.js`.
+2. Add a `## [x.y.z] — YYYY-MM-DD` entry at the top of `CHANGELOG.md`, with an upgrade note if users must act. `version.test.js` fails until the two match.
+3. Run `node --test`, then open a PR and merge it.
+4. Tag the merge commit and publish: `git tag -a vX.Y.Z -m "vX.Y.Z"`, `git push origin vX.Y.Z`, then `gh release create vX.Y.Z --title "vX.Y.Z"` with the CHANGELOG entry as the notes.
 
 ## Commits
 
-Clear messages, `feat:` / `fix:` / `docs:` convention. Run `node --test` before committing.
+Short messages with a `feat:` / `fix:` / `docs:` / `test:` prefix. Run `node --test` before you commit.

@@ -141,7 +141,7 @@ node assets/readme/source/tile.js
 python assets/readme/source/rasterize.py png assets/readme/tile-static.svg assets/readme/tile.png
 ```
 
-`tile.js --art <file>` also writes a narrow strip (beat tabs and terminal only, rendered at 72 columns) for a host page that draws its own frame and title, such as the tile on abialas.pl.
+`tile.js --art <file>` also writes a narrow strip (beat tabs and terminal only, rendered at 72 columns) for a host page that draws its own frame and title, such as the tile on abialas.pl. `--layout wide <file>` writes the 96-column version, with the sync age and the repo link that 72 columns drop, for a tile that puts the art beside its text. The site uses the wide strip on desktop and the narrow one on phones.
 
 ## Releasing
 

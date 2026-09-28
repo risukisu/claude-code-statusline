@@ -10,5 +10,3 @@ Thumbs.db
 **/*secret*.json
 **/.env
 
-# Tooling artifacts
-.memsearch/

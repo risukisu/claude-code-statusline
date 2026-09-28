@@ -1,8 +1,10 @@
 <p align="center">
-  <picture>
-    <source media="(prefers-reduced-motion: reduce)" srcset="assets/readme/hero.svg">
-    <img src="assets/readme/hero.gif" width="100%" alt="claude-code-statusline: four lines under the Claude Code prompt showing the model and a filling context bar, rate limits with pace, the git state of the current repo, and a fox commenting on three uncommitted files">
-  </picture>
+  <a href="https://github.com/risukisu/claude-code-statusline/releases/latest">
+    <picture>
+      <source media="(prefers-reduced-motion: reduce)" srcset="assets/readme/tile.png">
+      <img src="assets/readme/tile.svg" width="100%" alt="claude-code-statusline project card: the status line acts out its four lines in turn. The context bar fills and turns red with a /compact hint, a rate-limit bar shows overspend past the clock notch, git counts tick up and the repo link is clicked, and a fox types its line.">
+    </picture>
+  </a>
 </p>
 
 <p align="center">
@@ -33,6 +35,15 @@ It reads the JSON Claude Code already pipes to a status-line command, plus a few
 
 ## What Each Line Shows
 
+<p align="center">
+  <picture>
+    <source media="(prefers-reduced-motion: reduce)" srcset="assets/readme/live.svg">
+    <img src="assets/readme/live.gif" width="100%" alt="The status line live: four lines under the Claude Code prompt showing the model and a filling context bar, rate limits with pace, the git state of the current repo, and a fox commenting on three uncommitted files">
+  </picture>
+</p>
+
+Four lines, read top to bottom: how full this conversation is, how much of your usage allowance is left, what state the repo is in, and a companion who comments on it. The shimmering bar down the left edge is the [workspace colour](#colour-code-your-workspaces); it tells you which workspace this session belongs to.
+
 ### Line 1: Session
 
 ```text
@@ -47,6 +58,8 @@ It reads the JSON Claude Code already pipes to a status-line command, plus a few
 | `610k/1M` | tokens used of the context window (scales to your window, 1M included) |
 | `+156 −23` | lines added and removed this session |
 
+**Why red at 50%.** Claude answers best with a lean context. As a conversation grows past roughly 40%, older detail starts crowding out what matters now, so the bar turns orange at 40% as a warning and red at 50%, where `⚠ /compact` appears. That's the moment to run `/compact` (summarise and keep going) or `/clear` (start fresh). Both lines are [settings](#settings).
+
 ### Line 2: Limits
 
 ```text
@@ -59,6 +72,14 @@ It reads the JSON Claude Code already pipes to a status-line command, plus a few
 | `│` | how much of the window's time has passed. Fill that stops before the notch means you're within pace |
 | `███` past the notch | red: you're spending faster than the clock, and will run out before the reset |
 | `80%` · `2h30m left` | usage in numbers, and time until the window resets |
+
+**How to read a limit bar.** Think of each window as an allowance that refills at the reset.
+
+- The `│` notch is *now*. It sits halfway along when half the window's time has gone.
+- The fill is what you've spent.
+- Spending evenly would put the end of the fill exactly on the notch.
+- **Fill that stops before the notch** means you're spending slower than time passes. You'll make it to the reset. In the example, 7d has 41% spent with 57% of the week gone.
+- **Fill past the notch is red.** That's what you've spent ahead of schedule. In the example, 5h is 80% spent at the halfway mark, so the last 3 cells are red. At that pace you hit 100% after about 3 hours and wait roughly 1h50m for the reset.
 
 ### Line 3: Git
 
@@ -77,13 +98,21 @@ It reads the JSON Claude Code already pipes to a status-line command, plus a few
 | `gh:you/my-app` | the `origin` remote; click it to open the repo (`gh:` is github.com; other hosts show their domain) |
 | `PR #12 approved` | the open PR and its review state: `approved`, `pending`, `changes requested`, or `draft`; click it to open the PR. GitLab merge requests read `MR !12` |
 
+**What the arrows mean.**
+
+- `⇡2`: two commits you made on this computer that GitHub doesn't have yet. `git push` sends them; until then they exist only on your machine.
+- `⇣1`: one commit on GitHub that you don't have yet, from a merged PR, a teammate, or you on another machine. `git pull` brings it in.
+- `✓ synced`: both sides match. Nothing to push or pull.
+
+Both links (the remote and the PR) open in your browser with Ctrl+click, or Cmd+click on macOS.
+
 ### Line 4: Companion
 
 ```text
 ╰─ 🦊 3 files dirty and no commit. living dangerously.
 ```
 
-Off by default. The animal speaks in italics under line 3. See [The Animal Companion](#the-animal-companion).
+Off by default. The animal speaks in italics under line 3, in lines written ahead of time for what's going on: uncommitted files, a full context, a branch behind its upstream, late nights. It never calls a model and uses no tokens. See [The Animal Companion](#the-animal-companion).
 
 ## Install
 

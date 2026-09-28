@@ -125,14 +125,21 @@ If `characterization.test.js` fails, you changed what lines 1–3 print. Make su
 
 ## README Visuals
 
-`assets/readme/hero.svg`, `hero.gif`, and `companions.svg` are drawn from real renders. `build.js` feeds staged payloads through `statusline.js` in a throwaway config folder with a pinned clock and turns the ANSI output into SVG. `rasterize.py` screenshots the frames in headless Chromium and builds the GIF.
+`assets/readme/live.svg`, `live.gif`, and `companions.svg` are drawn from real renders. `build.js` feeds staged payloads through `statusline.js` in a throwaway config folder with a pinned clock and turns the ANSI output into SVG. `rasterize.py` screenshots the frames in headless Chromium and builds the GIF.
 
 ```bash
 node assets/readme/source/build.js --frames /tmp/sl-frames
-python assets/readme/source/rasterize.py gif /tmp/sl-frames assets/readme/hero.gif
+python assets/readme/source/rasterize.py gif /tmp/sl-frames assets/readme/live.gif
 ```
 
 The GIF step needs Python with Pillow and Playwright (`playwright install chromium`). Rebuild after changing what the lines print or which soul lines the demo uses.
+
+`assets/readme/tile.svg` is the project card at the top of the README: a CSS-animated SVG (no script, system fonts, so it plays inside a GitHub `<img>`) whose art is a real render acting out its four lines in 3-second beats. `tile.js` builds it from a list of pieces, each with a beat, a start time, and a resting and an active look; `tile.png` is the static fallback for reduced motion.
+
+```bash
+node assets/readme/source/tile.js
+python assets/readme/source/rasterize.py png assets/readme/tile-static.svg assets/readme/tile.png
+```
 
 ## Releasing
 

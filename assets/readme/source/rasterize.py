@@ -1,4 +1,4 @@
-"""Rasterize the README SVGs with headless Chromium (Playwright) and build hero.gif.
+"""Rasterize the README SVGs with headless Chromium (Playwright) and build live.gif.
 
     python rasterize.py png  <in.svg> <out.png>        # preview one SVG
     python rasterize.py gif  <frames-dir> <out.gif>    # frames from build.js --frames

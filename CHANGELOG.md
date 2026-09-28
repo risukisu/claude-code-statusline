@@ -38,6 +38,12 @@ release changes the soul format, the config file, or the install layout.
 - **The companion speaks.** Line 4 reads `╰─ 🦊 line` with the line in italics, instead
   of `🦊 ~ line`.
 
+### Docs
+
+- The README opens with an animated project card and explains, in plain words, how to
+  read each line: why the context bar turns red at 50%, how a limit bar's notch works, and
+  what `⇡` and `⇣` mean.
+
 ### Upgrading From 1.0.0
 
 - Copy `statusline.js` into `~/.claude/` again. Souls and `/animal` are unchanged.

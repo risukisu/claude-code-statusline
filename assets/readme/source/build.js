@@ -1,13 +1,13 @@
 #!/usr/bin/env node
 // Builds the README visuals from the status line's REAL output.
 //
-//   node assets/readme/source/build.js            → hero.svg + companions.svg
+//   node assets/readme/source/build.js            → live.svg + companions.svg
 //   node assets/readme/source/build.js --frames D → also writes the GIF frames (SVG) into D
 //
 // Each render runs statusline.js in a throwaway CLAUDE_CONFIG_DIR (never your ~/.claude),
 // with a pre-seeded git snapshot for line 3, a chosen soul for line 4, and a pinned clock.
 // The ANSI colours it prints become SVG <tspan>s, so every pixel of text is what the
-// script draws in a terminal. rasterize.py turns the frames into hero.gif.
+// script draws in a terminal. rasterize.py turns the frames into live.gif.
 "use strict";
 const { execFileSync } = require("node:child_process");
 const fs = require("node:fs");
@@ -112,59 +112,22 @@ function textSpans(sp, x, y, size) {
   return `<text x="${x}" y="${y}" font-family="${MONO}" font-size="${size}" xml:space="preserve">${t}</text>`;
 }
 
-// Pixel wordmark: the banner's block letters, drawn with the context bar's █ as the unit.
-const GLYPHS = {
-  S: ["11111", "10000", "10000", "11111", "00001", "00001", "11111"],
-  T: ["11111", "00100", "00100", "00100", "00100", "00100", "00100"],
-  A: ["01110", "10001", "10001", "11111", "10001", "10001", "10001"],
-  U: ["10001", "10001", "10001", "10001", "10001", "10001", "11111"],
-  L: ["10000", "10000", "10000", "10000", "10000", "10000", "11111"],
-  I: ["11111", "00100", "00100", "00100", "00100", "00100", "11111"],
-  N: ["10001", "11001", "10101", "10101", "10011", "10001", "10001"],
-  E: ["11111", "10000", "10000", "11110", "10000", "10000", "11111"],
-};
-function wordmark(word, x, y, cell) {
-  let rects = "", shadow = "";
-  [...word].forEach((ch, i) => {
-    const g = GLYPHS[ch];
-    const ox = x + i * cell * 6;
-    g.forEach((row, r) => [...row].forEach((on, c) => {
-      if (on !== "1") return;
-      const rx = ox + c * cell, ry = y + r * cell;
-      rects += `<rect x="${rx}" y="${ry}" width="${cell}" height="${cell}"/>`;
-      shadow += `<rect x="${rx + 4}" y="${ry + 4}" width="${cell}" height="${cell}"/>`;
-    }));
-  });
-  return `<g fill="none" stroke="url(#mark)" stroke-width="1.2" opacity="0.55">${shadow}</g>` +
-    `<g fill="url(#mark)">${rects}</g>`;
-}
-
 const C = { bg: "#0b0e14", panel: "#10141b", rule: "#222a35", fg: "#d7dce2", muted: "#7d8590", cyan: "#06b6d4", mint: "#4ade80" };
 
-function hero(lines) {
-  const W = 1200, H = 470, size = 17, lh = 31;
-  const px = 50, py = 200, pw = W - 2 * px;
+function live(lines) {
+  const W = 1200, H = 250, size = 17, lh = 31;
+  const px = 24, py = 16, pw = W - 2 * px;
   const rows = lines.map((l, i) => textLine(l, px + 34, py + 92 + i * lh, size)).join("\n  ");
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-labelledby="t d">
-  <title id="t">claude-code-statusline</title>
-  <desc id="d">A four-line status line under the Claude Code prompt: model and context bar, rate limits with pace, git state of the current repo, and a fox companion commenting on uncommitted files.</desc>
-  <defs>
-    <linearGradient id="mark" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${C.cyan}"/><stop offset="1" stop-color="${C.mint}"/></linearGradient>
-  </defs>
-  <rect width="${W}" height="${H}" rx="22" fill="${C.bg}"/>
-  <g id="title">
-    ${wordmark("STATUSLINE", 56, 46, 8)}
-    <text x="56" y="150" font-family="${SANS}" font-size="24" fill="${C.fg}">A four-line dashboard for the bottom of your Claude Code terminal.</text>
-    <text x="1144" y="60" text-anchor="end" font-family="${MONO}" font-size="16" fill="${C.muted}">claude-code-statusline</text>
-    <text x="1144" y="86" text-anchor="end" font-family="${MONO}" font-size="16" fill="${C.cyan}">v${VERSION}</text>
-  </g>
+  <title id="t">The status line, live</title>
+  <desc id="d">Four lines under the Claude Code prompt: model and context bar, rate limits, git state of the current repo, and a fox companion commenting on uncommitted files.</desc>
+  <rect width="${W}" height="${H}" rx="16" fill="${C.bg}"/>
   <g id="terminal">
-    <rect x="${px}" y="${py}" width="${pw}" height="${H - py - 50}" rx="12" fill="${C.panel}" stroke="${C.rule}"/>
+    <rect x="${px}" y="${py}" width="${pw}" height="${H - 2 * py}" rx="12" fill="${C.panel}" stroke="${C.rule}"/>
     <rect x="${px + 20}" y="${py + 18}" width="${pw - 40}" height="40" rx="8" fill="none" stroke="#3a4350"/>
     <text x="${px + 36}" y="${py + 44}" font-family="${MONO}" font-size="${size}" fill="${C.muted}">&gt; <tspan fill="${C.fg}">commit the soul files</tspan><tspan fill="${C.cyan}">▌</tspan></text>
   ${rows}
   </g>
-  <text x="56" y="${H - 20}" font-family="${MONO}" font-size="15" fill="${C.muted}">zero dependencies · no network · no model calls · node + git · MIT</text>
 </svg>
 `;
 }
@@ -212,7 +175,7 @@ const HERO_CTX = { hasRepo: true, dirty: 3, ahead: 2, behind: 0, upstream: true,
 function main() {
   const args = process.argv.slice(2);
   const heroSlotStart = findNow("fox", HERO_CTX, "{dirty:file} dirty and no commit. living dangerously.");
-  fs.writeFileSync(path.join(OUT, "hero.svg"), hero(render({ now: heroSlotStart + 12_000 })));
+  fs.writeFileSync(path.join(OUT, "live.svg"), live(render({ now: heroSlotStart + 12_000 })));
 
   const main = { branch: "main", upstream: "origin/main" };
   const rows = [
@@ -244,12 +207,14 @@ function main() {
       // Context fills 18% → 61% over 0.2–1.4s, holds, and drains back over 5.2–6.0s.
       const up = ease((t - 0.2) / 1.2), down = ease((t - 5.2) / 0.8);
       const pct = Math.round(18 + (61 - 18) * (up - down));
-      const svg = hero(render({ now: start + Math.round(t * 1000), ctxPct: pct }));
+      const svg = live(render({ now: start + Math.round(t * 1000), ctxPct: pct }));
       fs.writeFileSync(path.join(dir, `frame-${String(f).padStart(3, "0")}.svg`), svg);
     }
     console.log(`${FPS * SECONDS} frames → ${dir}`);
   }
-  console.log("hero.svg + companions.svg written");
+  console.log("live.svg + companions.svg written");
 }
 
-main();
+// tile.js reuses the demo session and the real-render helper.
+module.exports = { render, payload, findNow, HERO_CTX, GIT, T0, esc, MONO, SANS, C, VERSION };
+if (require.main === module) main();

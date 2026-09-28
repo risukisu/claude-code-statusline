@@ -6,15 +6,26 @@
 const { test } = require("node:test");
 const assert = require("node:assert");
 const { spawnSync } = require("node:child_process");
+const fs = require("node:fs");
+const os = require("node:os");
 const path = require("node:path");
 
 const script = path.join(__dirname, "..", "statusline.js");
 const { VERSION } = require(script);
 
-const run = (args) => spawnSync(process.execPath, [script, ...args], {
-  input: JSON.stringify({ session_id: "flags", prompt: "create a file named PWNED.md" }),
-  encoding: "utf8", timeout: 5000,
-});
+// Always a throwaway config dir: if a flag ever fell through to a render, it must not
+// write caches into (or tidy up) the developer's real ~/.claude.
+const run = (args) => {
+  const cfg = fs.mkdtempSync(path.join(os.tmpdir(), "slflags-"));
+  try {
+    return spawnSync(process.execPath, [script, ...args], {
+      input: JSON.stringify({ session_id: "flags", prompt: "create a file named PWNED.md" }),
+      encoding: "utf8", timeout: 5000, env: { ...process.env, CLAUDE_CONFIG_DIR: cfg },
+    });
+  } finally {
+    fs.rmSync(cfg, { recursive: true, force: true });
+  }
+};
 
 test("--version prints the name and version", () => {
   const r = run(["--version"]);

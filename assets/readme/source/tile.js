@@ -4,12 +4,14 @@
 //   node assets/readme/source/tile.js                → assets/readme/tile.svg + tile-static.svg
 //   node assets/readme/source/tile.js --art <file>   → also the narrow "art" strip (beat tabs +
 //                                                       terminal) for a site tile, e.g. abialas.pl
+//   node assets/readme/source/tile.js --layout wide <file>   → the 96-column strip, same idea
 //   python assets/readme/source/rasterize.py png assets/readme/tile-static.svg assets/readme/tile.png
 //
-// Two layouts share one timeline. `card` is the full README card in the abialas.pl tile style
+// Three layouts share one timeline. `card` is the full README card in the abialas.pl tile style
 // (flat plate, 2px ink border, hard offset shadow, title with ↗, pitch line, mono link).
-// `art` is only the beat tabs and the terminal, rendered at 72 columns so the lines fit a
-// half-width tile, for a host page that draws its own frame and title.
+// The strips are only the beat tabs and the terminal, for a host page that draws its own frame
+// and title: `art` at 72 columns fits a narrow tile or a phone, `wide` at 96 columns shows
+// every segment beside a tile's text.
 //
 // The lines are a REAL render (build.js → statusline.js in a throwaway config dir), laid out
 // on a terminal grid. Every piece has a dim resting look that is always on screen and a
@@ -32,8 +34,15 @@ const LAYOUTS = {
   // 72 columns: the fitting drops the token count; the demo hides the sync age and launches
   // from the repo itself (no ▸), with a settings-file palette so "my-app" still shimmers.
   art: {
-    H: 152, TX: 22, CW: 7.2, SIZE: 12, LY: [58, 81, 104, 127], LH: 23, cols: 72,
+    strip: true, H: 152, TX: 22, CW: 7.2, SIZE: 12, LY: [58, 81, 104, 127], LH: 23, cols: 72,
     dash: { hide: ["sync"], palettes: [{ match: "my-app", from: "#06b6d4", to: "#4ade80" }] },
+    workspace: { project_dir: REPO, current_dir: REPO },
+  },
+  // 96 columns: every segment fits (the longest line stops growing at 84 cells), so the sync
+  // age and the repo link come back; the tabs spread edge to edge. For a full-width site tile.
+  wide: {
+    strip: true, spread: true, H: 152, TX: 22, CW: 7.2, SIZE: 12, LY: [58, 81, 104, 127], LH: 23, cols: 96,
+    dash: { palettes: [{ match: "my-app", from: "#06b6d4", to: "#4ade80" }] },
     workspace: { project_dir: REPO, current_dir: REPO },
   },
 };
@@ -265,9 +274,10 @@ function build(L) {
     body += `<g class="a p${i}${p.final ? " final" : ""}">${p.svg}</g>`;
   });
 
-  // Beat tabs: the readout that names the beat on stage.
-  function tabs(x0, y, { blurbs, fontSize, charW, gap }) {
+  // Beat tabs: the readout that names the beat on stage. `gap: null` spreads them edge to edge.
+  function tabs(x0, y, { blurbs, fontSize, charW, gap, width }) {
     let out = "", tx = x0;
+    if (gap == null) gap = (width - 2 * x0 - BEATS.reduce((n, b, i) => n + `0${i + 1} ${b.name}`.length * charW, 0)) / (BEATS.length - 1);
     BEATS.forEach((b, i) => {
       const label = `0${i + 1} ${b.name}`;
       const wLabel = label.length * charW;
@@ -295,13 +305,13 @@ function build(L) {
   const glowH = Math.round(LH * 1.18);
   const terminal = `<g id="terminal">${gutter}<g clip-path="url(#gut)"><rect class="glow" x="${gx}" y="${gy(0)}" width="${gw}" height="${glowH}" fill="url(#gl)"/></g>${rest.join("")}${body}</g>`;
 
-  // Built before svg(): tabs() registers keyframes the stylesheet must include.
-  const isArt = L === LAYOUTS.art;
-  const tabsSvg = isArt
-    ? tabs(2, 14, { blurbs: false, fontSize: 11, charW: 6.6, gap: 22 })
-    : tabs(36, 146, { blurbs: true, fontSize: 16, charW: 8.4, gap: 46 });
-  // The art strip is as wide as its longest line (the card has a fixed plate).
+  // A strip is as wide as its longest line (the card has a fixed plate).
+  const isArt = !!L.strip;
   const W = isArt ? Math.ceil(TX + Math.max(...rows.map((row) => row.length)) * CW + 12) : L.W;
+  // Built before svg(): tabs() registers keyframes the stylesheet must include.
+  const tabsSvg = isArt
+    ? tabs(2, 14, { blurbs: false, fontSize: 11, charW: 6.6, gap: L.spread ? null : 22, width: W })
+    : tabs(36, 146, { blurbs: true, fontSize: 16, charW: 8.4, gap: 46 });
 
   function svg({ animated }) {
     const { H } = L;
@@ -353,10 +363,15 @@ fs.writeFileSync(path.join(OUT, "tile-static.svg"), card.still);
 const kb = (f) => (fs.statSync(f).size / 1024).toFixed(1);
 console.log(`tile.svg ${kb(path.join(OUT, "tile.svg"))} KB, ${card.pieces} pieces, ${LOOP}s loop`);
 
+// --art <file> is the 72-column strip; --layout <name> <file> writes any other strip layout.
+const strips = [];
 const ai = process.argv.indexOf("--art");
-if (ai >= 0) {
-  const file = path.resolve(process.argv[ai + 1]);
-  const art = build(LAYOUTS.art);
+if (ai >= 0) strips.push(["art", process.argv[ai + 1]]);
+process.argv.forEach((a, i) => { if (a === "--layout") strips.push([process.argv[i + 1], process.argv[i + 2]]); });
+for (const [name, out] of strips) {
+  if (!LAYOUTS[name] || !LAYOUTS[name].strip) throw new Error(`no strip layout "${name}" (have: ${Object.keys(LAYOUTS).filter((k) => LAYOUTS[k].strip).join(", ")})`);
+  const file = path.resolve(out);
+  const art = build(LAYOUTS[name]);
   fs.writeFileSync(file, art.animated);
-  console.log(`art ${file} ${kb(file)} KB, ${art.pieces} pieces`);
+  console.log(`${name} ${file} ${kb(file)} KB, ${art.pieces} pieces`);
 }

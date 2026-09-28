@@ -51,9 +51,11 @@ function payload(now, ctxPct) {
 const GIT = { branch: "feat/souls", upstream: "origin/feat/souls", ahead: 2, behind: 0, dirty: 3, syncAge: "3h ago" };
 
 // ─── one real render ──────────────────────────────────────────────────────
-function render({ now, ctxPct = 61, animal = "fox", git = GIT, cols = 140, data }) {
+// `dash` is an optional ~/.claude/statusline.json for the render (theme, hide, palettes…).
+function render({ now, ctxPct = 61, animal = "fox", git = GIT, cols = 140, data, dash }) {
   const cfg = fs.mkdtempSync(path.join(os.tmpdir(), "sl-readme-"));
   try {
+    if (dash) fs.writeFileSync(path.join(cfg, "statusline.json"), JSON.stringify(dash));
     fs.mkdirSync(path.join(cfg, "souls"));
     fs.copyFileSync(path.join(ROOT, "souls", `${animal}.md`), path.join(cfg, "souls", `${animal}.md`));
     fs.writeFileSync(path.join(cfg, "statusline-soul.json"), JSON.stringify({ mode: "canned", animal }));

@@ -141,6 +141,8 @@ node assets/readme/source/tile.js
 python assets/readme/source/rasterize.py png assets/readme/tile-static.svg assets/readme/tile.png
 ```
 
+`tile.js --art <file>` also writes a narrow strip (beat tabs and terminal only, rendered at 72 columns) for a host page that draws its own frame and title, such as the tile on abialas.pl.
+
 ## Releasing
 
 Versions follow [semantic versioning](https://semver.org):

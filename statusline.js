@@ -3,12 +3,13 @@
  * Claude Code status line — a micro terminal dashboard.
  * https://github.com/risukisu/claude-code-statusline
  *
- * Renders three lines from the JSON Claude Code pipes to a status-line command
- * (no API calls, no transcript parsing — just the stdin payload):
+ * Renders four lines from the JSON Claude Code pipes to a status-line command
+ * (no network, no model calls — just the stdin payload and a few local git reads):
  *
- *   Line 1 (session):  ⏺  Model ✦ effort  ▕████████░░░░▏ 42% · 420k/1M  │  +156 −23
- *   Line 2 (limits):   ◷ 5h 24% ⇣8 · 1h47m left  │  7d 81% ⇡3 · 2d3h left
- *   Line 3 (git):      📁  LaunchRoot ▸ repo : branch · ✚3 · ⇡2 ⇣1 · ↻3h ago · gh:owner/name · PR #12 pending
+ *   Line 1 (session):   ⏺  Model ✦ effort  ▕████████░░░░▏ 42% · 420k/1M  │  +156 −23
+ *   Line 2 (limits):    ◷ 5h 24% ⇣8 · 1h47m left  │  7d 81% ⇡3 · 2d3h left
+ *   Line 3 (git):       📁  LaunchRoot ▸ repo : branch · ✚3 · ⇡2 ⇣1 · ↻3h ago · gh:owner/name · PR #12 pending
+ *   Line 4 (companion): 🦊 ~ a hand-written line for what's going on (optional, off by default)
  *
  * Pace arrows (line 2): ⇡N = used N% more of the window than the clock has
  * elapsed (burning fast), ⇣N = under pace. Line 3 leads with the LAUNCH folder
@@ -26,6 +27,7 @@
  *   so a low value multiplied across open sessions is a real process-spawn cost.
  *
  * Context-bar gradient ported from getagentseal/codeburn. MIT licensed.
+ * `node statusline.js --version` prints the installed version.
  */
 
 "use strict";
@@ -34,6 +36,7 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 
+const VERSION = "1.0.0";
 const EMOJI = { squirrel: "🐿️", fox: "🦊", turtle: "🐢" };
 const ANIMALS = ["squirrel", "fox", "turtle"];
 const MODES = ["off", "canned"];
@@ -59,11 +62,19 @@ const GIT_CACHE_TTL_MS = parseInt(process.env.STATUSLINE_GIT_TTL_MS || "", 10) |
 const SOUL_FILE = (animal) => path.join(claudeDir(), "souls", `${animal}.md`);
 const COMMAND_FILE = () => path.join(claudeDir(), "commands", "animal.md");
 
-module.exports = {}; // extended by later tasks
+module.exports = { VERSION };
 
 // ─── soul markdown parser ──────────────────────────────────────────────────
+// A soul is a markdown file with one bullet list per section. `ambient` is idle chatter,
+// `work` is the generic "you're busy" fallback, and the rest match one state each
+// (see pickCanned). Any other `## heading` is ignored.
+const NOTABLE = ["context", "limits", "behind", "dirty", "ahead"];
+const CALM = ["night", "norepo", "synced", "branch"];
+const SECTIONS = ["ambient", "work", ...NOTABLE, ...CALM];
+
 function parseSoul(md) {
-  const out = { voice: "", rules: "", work: [], ambient: [] };
+  const out = { voice: "", rules: "" };
+  for (const name of SECTIONS) out[name] = [];
   if (typeof md !== "string") return out;
   let section = null;
   for (const raw of md.split("\n")) {
@@ -72,7 +83,7 @@ function parseSoul(md) {
     if (h) { section = h[1].toLowerCase(); continue; }
     const v = line.match(/^voice:\s*(.+)$/i); if (v) { out.voice = v[1].trim(); continue; }
     const r = line.match(/^rules:\s*(.+)$/i); if (r) { out.rules = r[1].trim(); continue; }
-    if ((section === "work" || section === "ambient") && line.trim().startsWith("-")) {
+    if (SECTIONS.includes(section) && line.trim().startsWith("-")) {
       const item = line.replace(/^\s*-\s+/, "").trim();
       if (item) out[section].push(item);
     }
@@ -80,6 +91,7 @@ function parseSoul(md) {
   return out;
 }
 module.exports.parseSoul = parseSoul;
+module.exports.SECTIONS = SECTIONS;
 
 // ─── ANSI helpers ──────────────────────────────────────────────────────────
 const ESC = "\x1b[";
@@ -151,7 +163,7 @@ function fmtDur(s) {
   return `${m}m`;
 }
 
-// ─── git (max 2 subprocess calls, never throws) ───────────────────────────
+// ─── git (short timeouts, never throws) ───────────────────────────────────
 function git(args, cwd) {
   try {
     return execSync(`git --no-optional-locks ${args}`, {
@@ -229,19 +241,25 @@ function parseRemote(url) {
 }
 
 // ─── rate-limit window: used %, pace vs time elapsed, reset countdown ─────
+// Pace = % of the window used minus % of the window's time elapsed. Positive = burning fast.
+function windowPace(win, windowLen) {
+  if (!win || win.used_percentage == null || !win.resets_at) return null;
+  const remaining = win.resets_at - Math.floor(Date.now() / 1000);
+  if (remaining <= 0 || remaining > windowLen) return null;
+  const elapsedPct = (1 - remaining / windowLen) * 100;
+  return { delta: Math.round(win.used_percentage - elapsedPct), remaining };
+}
+
 function limitSeg(label, win, windowLen) {
   if (!win || win.used_percentage == null) return null;
   const p = Math.round(win.used_percentage);
   let seg = `${DIM}${label}${RESET} ${pctColor(p)}${p}%${RESET}`;
-  if (win.resets_at) {
-    const remaining = win.resets_at - Math.floor(Date.now() / 1000);
-    if (remaining > 0 && remaining <= windowLen) {
-      const elapsedPct = (1 - remaining / windowLen) * 100;
-      const delta = Math.round(win.used_percentage - elapsedPct);
-      if (delta >= 2) seg += ` ${delta >= 15 ? RED : YELLOW}⇡${delta}${RESET}`;
-      else if (delta <= -2) seg += ` ${GREEN}⇣${-delta}${RESET}`;
-      seg += `${sep}${DIM}${fmtDur(remaining)} left${RESET}`;
-    }
+  const pace = windowPace(win, windowLen);
+  if (pace) {
+    const { delta, remaining } = pace;
+    if (delta >= 2) seg += ` ${delta >= 15 ? RED : YELLOW}⇡${delta}${RESET}`;
+    else if (delta <= -2) seg += ` ${GREEN}⇣${-delta}${RESET}`;
+    seg += `${sep}${DIM}${fmtDur(remaining)} left${RESET}`;
   }
   return seg;
 }
@@ -251,12 +269,36 @@ function readCache(file) {
   try { return JSON.parse(fs.readFileSync(file, "utf8")); } catch { return null; }
 }
 function writeCache(file, obj) {
+  const tmp = `${file}.${process.pid}.tmp`;
   try {
-    const tmp = `${file}.${process.pid}.tmp`;
     fs.writeFileSync(tmp, JSON.stringify(obj));
     fs.renameSync(tmp, file);
-  } catch { /* never throw from the status line */ }
+  } catch {
+    // Never throw from the status line, and don't leave the temp file behind either
+    // (on Windows the rename fails while another render has the target open).
+    try { fs.unlinkSync(tmp); } catch {}
+  }
 }
+
+// Sweep this project's own leftovers: git snapshots from sessions idle for a day, and
+// temp files a killed write never renamed. Matches nothing but statusline-git.* caches.
+const CACHE_NAME = /^statusline-git\.[A-Za-z0-9_-]{1,64}\.cache\.json(\.\d+\.tmp)?$/;
+const CACHE_MAX_AGE_MS = 24 * 3600_000;
+const TMP_MAX_AGE_MS = 60_000;
+function pruneStaleCaches(dir, now) {
+  let names;
+  try { names = fs.readdirSync(dir); } catch { return; }
+  for (const name of names) {
+    const m = name.match(CACHE_NAME);
+    if (!m) continue;
+    const file = path.join(dir, name);
+    try {
+      const age = now - fs.statSync(file).mtimeMs;
+      if (age > (m[1] ? TMP_MAX_AGE_MS : CACHE_MAX_AGE_MS)) fs.unlinkSync(file);
+    } catch { /* another render got there first */ }
+  }
+}
+module.exports.pruneStaleCaches = pruneStaleCaches;
 // A per-session git snapshot may be reused only if it is for the same directory
 // (never show the wrong repo after a cd) and younger than the TTL. Renders that
 // hit a fresh cache skip all 4–5 git subprocesses.
@@ -313,10 +355,15 @@ process.stdin.on("end", () => {
   let soul = null;
   try { soul = cfg.mode === "off" ? null : parseSoul(fs.readFileSync(SOUL_FILE(cfg.animal), "utf8")); } catch {}
   const nowMs = Date.now();
-  const line4 = (hasRepo, dirty) => renderLine4(cfg, soul, {
-    hasConfig, hasCommand, hasRepo, dirty,
+  const five = (d.rate_limits || {}).five_hour;
+  const fivePace = windowPace(five, 5 * 3600);
+  const line4 = (git) => renderLine4(cfg, soul, {
+    hasConfig, hasCommand, cols,
+    ...git,
     contextPct: (d.context_window && d.context_window.used_percentage) || 0,
-    cols,
+    limitPct: five && five.used_percentage != null ? five.used_percentage : null,
+    pace: fivePace ? fivePace.delta : null,
+    hour: new Date(nowMs).getHours(),
   }, nowMs);
 
   // — Line 1 (session): model · effort · context bar · lines changed —
@@ -361,6 +408,7 @@ process.stdin.on("end", () => {
   // Per-session git cache: reuse a fresh snapshot, else read git once and store it.
   const gitCacheFile = GIT_CACHE_FILE(d.session_id);
   let snap = readCache(gitCacheFile);
+  if (!snap) pruneStaleCaches(claudeDir(), nowMs); // a session's first render tidies up after old ones
   if (!gitCacheFresh(snap, cwd, nowMs, GIT_CACHE_TTL_MS)) {
     const s = computeGitSnapshot(cwd);
     snap = { cwd, gitTs: nowMs, g: s.g, topLevel: s.topLevel, branch: s.branch, originUrl: s.originUrl };
@@ -377,7 +425,7 @@ process.stdin.on("end", () => {
 
   if (!g) {
     console.log(`📁  ${folderDisp}${hereSeg}${sep}${DIM}no repo${RESET}`);
-    console.log(line4(false, 0));
+    console.log(line4({ hasRepo: false, dirty: 0 }));
     return;
   }
 
@@ -411,7 +459,10 @@ process.stdin.on("end", () => {
   console.log(line3);
 
   // — Line 4: animal companion (canned lines; no model call) —
-  console.log(line4(true, g.dirty));
+  console.log(line4({
+    hasRepo: true, dirty: g.dirty, ahead: g.ahead, behind: g.behind,
+    upstream: !!g.upstream, branch,
+  }));
 });
 }
 
@@ -419,8 +470,7 @@ function loadConfig(file) {
   try {
     const c = JSON.parse(fs.readFileSync(file, "utf8"));
     return {
-      // "react" (the retired live-Haiku mode) degrades to canned so an old config keeps its companion.
-      mode: c.mode === "react" ? "canned" : MODES.includes(c.mode) ? c.mode : "off",
+      mode: MODES.includes(c.mode) ? c.mode : "off",
       animal: ANIMALS.includes(c.animal) ? c.animal : "squirrel",
     };
   } catch {
@@ -429,13 +479,68 @@ function loadConfig(file) {
 }
 module.exports.loadConfig = loadConfig;
 
-// ─── hybrid line-selection cadence ────────────────────────────────────────
+// ─── line selection ───────────────────────────────────────────────────────
+// Placeholders: {dirty} {ahead} {behind} {ctx} {limit} {branch}; {key:noun} adds a count
+// with a plural ("{dirty:file}" → "1 file" / "3 files"). A line whose placeholder has no
+// value, or names an unknown key, is skipped rather than shown half-filled.
+const PLACEHOLDERS = ["dirty", "ahead", "behind", "ctx", "limit", "branch"];
+function fillLine(line, vals) {
+  let ok = true;
+  const out = line.replace(/\{([a-z]+)(?::([a-z]+))?\}/g, (_, key, noun) => {
+    const v = PLACEHOLDERS.includes(key) ? vals[key] : null;
+    if (v == null || v === "") { ok = false; return ""; }
+    return noun ? `${v} ${noun}${v === 1 ? "" : "s"}` : String(v);
+  });
+  return ok ? out : null;
+}
+module.exports.fillLine = fillLine;
+
+// Which states hold right now, each list in priority order.
+function activeStates(ctx) {
+  const on = {
+    context: ctx.contextPct >= 70,
+    limits: ctx.limitPct >= 80 || ctx.pace >= 15,
+    behind: ctx.hasRepo && ctx.behind > 0,
+    dirty: ctx.hasRepo && ctx.dirty > 0,
+    ahead: ctx.hasRepo && ctx.ahead > 0,
+    night: ctx.hour != null && ctx.hour < 5,
+    norepo: !ctx.hasRepo,
+    synced: ctx.hasRepo && !!ctx.upstream && !ctx.dirty && !ctx.ahead && !ctx.behind,
+    branch: ctx.hasRepo && !!ctx.branch && ctx.branch !== "main" && ctx.branch !== "master",
+  };
+  return { notable: NOTABLE.filter((n) => on[n]), calm: CALM.filter((n) => on[n]) };
+}
+
+// One slot = AMBIENT_EVERY_MS of wall clock. Busy (a notable state holds): two slots in
+// three go to the notable states in turn, plus the generic `work` lines, which also stand
+// in for a state the soul has no section for; every third slot goes to ambient so the
+// character still shows. Otherwise the calm states that hold take turns with ambient.
 function pickCanned(soul, ctx, now) {
-  const notable = (ctx.hasRepo && ctx.dirty > 0) || ctx.contextPct >= 70;
-  const list = notable && soul.work.length ? soul.work
-    : soul.ambient.length ? soul.ambient : soul.work;
-  if (!list.length) return null;
-  return list[Math.floor(now / AMBIENT_EVERY_MS) % list.length];
+  const vals = {
+    dirty: ctx.dirty, ahead: ctx.ahead, behind: ctx.behind, branch: ctx.branch,
+    ctx: ctx.contextPct != null ? Math.round(ctx.contextPct) : null,
+    limit: ctx.limitPct != null ? Math.round(ctx.limitPct) : null,
+  };
+  const lines = (name) => (soul[name] || []).map((l) => fillLine(l, vals)).filter((l) => l != null);
+  const ambient = lines("ambient").length ? lines("ambient") : lines("work");
+  const slot = Math.floor(now / AMBIENT_EVERY_MS);
+  const { notable, calm } = activeStates(ctx);
+
+  const busy = notable.length
+    ? [...new Set([...notable.map((n) => (lines(n).length ? n : "work")), "work"])].map(lines).filter((p) => p.length)
+    : [];
+  let pools, k;
+  if (busy.length) {
+    if (slot % 3 === 2 && ambient.length) return ambient[Math.floor(slot / 3) % ambient.length];
+    pools = busy;
+    k = slot - Math.floor(slot / 3); // counts only the busy slots
+  } else {
+    pools = [...calm.map(lines), ambient].filter((p) => p.length);
+    k = slot;
+  }
+  if (!pools.length) return null;
+  const pool = pools[k % pools.length];
+  return pool[Math.floor(k / pools.length) % pool.length];
 }
 function truncate(text, cols) {
   const max = Math.max(8, (cols || 120) - 4);
@@ -444,12 +549,16 @@ function truncate(text, cols) {
 module.exports.pickCanned = pickCanned;
 module.exports.truncate = truncate;
 
-// ─── retired entry points ─────────────────────────────────────────────────
-// `--hook` and `--gen` belonged to the removed live "react" mode (a background
-// `claude -p` call per submitted prompt). They stay as silent no-ops so a settings.json
-// that still registers the UserPromptSubmit hook never prints status lines into hook output.
-
+// ─── entry point ──────────────────────────────────────────────────────────
+// Claude Code runs the status line with no arguments. `--version` prints the version; any
+// other argument exits silently, so a stale hook entry from an older install can never
+// paste status lines into a conversation (hook output is injected into Claude's context).
 if (require.main === module) {
-  if (process.argv.includes("--gen") || process.argv.includes("--hook")) process.exit(0);
+  const args = process.argv.slice(2);
+  if (args.includes("--version") || args.includes("-v")) {
+    console.log(`claude-code-statusline ${VERSION}`);
+    process.exit(0);
+  }
+  if (args.length) process.exit(0);
   main();
 }

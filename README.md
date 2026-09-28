@@ -1,114 +1,97 @@
-<div align="center">
-  <img src="docs/banner.png" alt="STATUSLINE" width="740">
-  <p><sub>⏺ &nbsp;&nbsp; a 4-line micro-dashboard that lives in your Claude Code terminal &nbsp;&nbsp; 🐿️</sub></p>
-</div>
-
-<div align="center">
-
-<a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-22c55e?style=for-the-badge" alt="MIT License"></a>
-<img src="https://img.shields.io/badge/built%20for-Claude%20Code-E8744F?style=for-the-badge" alt="Built for Claude Code">
-<img src="https://img.shields.io/badge/runtime-Node.js-5b9ef5?style=for-the-badge&logo=node.js&logoColor=white" alt="Node.js">
-<img src="https://img.shields.io/badge/deps-0-4ade80?style=for-the-badge" alt="Zero dependencies">
-
-<sub>Windows Terminal · macOS · Linux · any truecolor terminal</sub>
-
-</div>
-
----
-
-A tiny, dependency-free status line for [Claude Code](https://docs.anthropic.com/en/docs/claude-code) that turns the empty bar at the bottom of your terminal into a glanceable dashboard: **which model + effort** you're on, **how much context** you've burned, **how close you are to your rate limits** (and whether you're burning them faster than the clock), and the **full git picture** of the repo you're in — branch, dirty files, ahead/behind, last sync, remote, and open PR.
-
-It reads only the JSON Claude Code already pipes to a status-line command. **No API calls, no dependencies** — just `node` and a few fast `git` calls. **Nothing reads your transcript or calls a model.** The optional [animal companion](#animal-companion-optional) (line 4) is off by default and rotates hand-written lines when on.
-
 <p align="center">
-  <img src="docs/statusline.png" alt="claude-code-statusline running in a Claude Code terminal" width="840">
+  <picture>
+    <source media="(prefers-reduced-motion: reduce)" srcset="assets/readme/hero.svg">
+    <img src="assets/readme/hero.gif" width="100%" alt="claude-code-statusline: four lines under the Claude Code prompt showing the model and a filling context bar, rate limits with pace, the git state of the current repo, and a fox commenting on three uncommitted files">
+  </picture>
 </p>
 
-> [!NOTE]
-> The context bar is a live **blue → amber → red** fill and the launch-root name **shimmers** (an animated gradient) — a screenshot only catches one frame. Above is a real session in the personal workspace's cyan→mint.
+<p align="center">
+  <a href="https://github.com/risukisu/claude-code-statusline/releases"><img src="https://img.shields.io/github/v/release/risukisu/claude-code-statusline?style=for-the-badge&color=06b6d4&label=release" alt="Latest release"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-4ade80?style=for-the-badge" alt="MIT License"></a>
+  <img src="https://img.shields.io/badge/deps-0-4ade80?style=for-the-badge" alt="Zero dependencies">
+  <img src="https://img.shields.io/badge/built%20for-Claude%20Code-E8744F?style=for-the-badge" alt="Built for Claude Code">
+</p>
 
----
+A status line for [Claude Code](https://docs.anthropic.com/en/docs/claude-code) that answers the questions you keep asking mid-session. Which model and effort am I on? How much context is left? Am I burning my rate limits faster than the clock? What state is this repo in? A small animal companion comments on all of it, if you want one.
+
+It reads the JSON Claude Code already pipes to a status-line command, plus a few local `git` calls. **No network, no API keys, no model calls, no dependencies.** One Node file you drop into `~/.claude/`.
+
+<p align="center">
+  <img src="docs/statusline.png" width="100%" alt="The status line in a real Claude Code session: Opus with max effort, 27% context, 5h and 7d limits, the launch workspace shimmering in cyan and mint, a synced main branch, and a squirrel">
+</p>
+<p align="center"><sub>A real session. The context bar and the workspace shimmer move; a screenshot catches one frame.</sub></p>
 
 ## Contents
 
-- [What it shows](#what-it-shows)
+- [What Each Line Shows](#what-each-line-shows)
 - [Install](#install)
-- [Try it without Claude Code](#try-it-without-claude-code)
-- [Customize — colour-code your workspaces](#customize--colour-code-your-workspaces)
-- [Animal companion (optional)](#animal-companion-optional)
-- [How it works](#how-it-works)
-- [Project structure](#project-structure)
+- [The Animal Companion](#the-animal-companion)
+- [Colour-Code Your Workspaces](#colour-code-your-workspaces)
+- [How It Works](#how-it-works)
 - [Troubleshooting](#troubleshooting)
-- [License & credits](#license--credits)
+- [Versions](#versions)
 
----
+## What Each Line Shows
 
-## What it shows
-
-Four lines, each with its own job.
-
-### `Line 1` — session
+### Line 1: Session
 
 ```text
-⏺  Claude Opus 4.8  ✦ high   ▕████████████░░░░░░░░▏ 61% · 610k/1M   │   +156 −23
+⏺  Opus 5.5 ✦ high  ▕████████████░░░░░░░░▏ 61% · 610k/1M  │  +156 −23
 ```
 
 | Segment | Meaning |
 |---|---|
-| `⏺ Claude Opus 4.8` | active model (`model.display_name`) |
-| `✦ high` | reasoning effort / thinking level (`effort.level`) |
-| `▕███░░▏ 61%` | context window used — gradient bar, **blue → amber → red** as it fills |
-| `610k/1M` | tokens used / context window size (auto-scales to your window, incl. 1M) |
-| `+156 −23` | lines added / removed this session (`cost`) |
+| `Opus 5.5` `✦ high` | active model and reasoning effort |
+| `▕████░░▏ 61%` | context used; the bar runs blue → amber → red as it fills |
+| `610k/1M` | tokens used of the context window (scales to your window, 1M included) |
+| `+156 −23` | lines added and removed this session |
 
-### `Line 2` — limits
+### Line 2: Limits
 
 ```text
-◷ 5h 58% ⇡3 · 1h47m left   │   7d 81% · 2d3h left
+◷ 5h 58% ⇣6 · 1h47m left  │  7d 41% ⇣29 · 2d3h left
 ```
 
 | Segment | Meaning |
 |---|---|
-| `5h 58%` · `7d 81%` | % of the **5-hour** and **7-day** rate-limit windows used (green → amber → red) |
-| `⇡3` / `⇣8` | **pace vs. the clock** — `⇡` = burning faster than time elapsed, `⇣` = under pace |
+| `5h 58%` · `7d 41%` | share of the 5-hour and 7-day rate-limit windows used (green → amber → red) |
+| `⇡N` / `⇣N` | pace against the clock: `⇡` means you've used N points more than the time elapsed, `⇣` means you're under |
 | `1h47m left` | time until that window resets |
 
-### `Line 3` — git
+### Line 3: Git
 
 ```text
-📁 my-workspace ▸ my-project : main · ✚3 · ⇡2 · ↻3h ago · gh:me/my-project · PR #12 pending
+📁  AI_WORKSPACE_Personal ▸ my-app : feat/souls · ✚ 3 · ⇡2 · ↻ 3h ago · gh:you/my-app · PR #12 approved
 ```
 
 | Segment | Meaning |
 |---|---|
-| `📁 my-workspace` | **launch root** — the folder you started Claude in; *shimmers in your workspace colour* |
-| `▸ my-project` | the repo you've `cd`'d into — shown **only** when it differs from the launch root |
-| `: main` | current branch (white on `main`/`master`, amber otherwise) |
-| `✚3` | uncommitted changes |
-| `⇡2 ⇣1` | commits ahead / behind upstream — or `✓ synced` when clean and even |
-| `↻3h ago` | age of the upstream's last commit |
-| `gh:me/my-project` | origin remote (`gh:` = github.com; other hosts show their domain) |
-| `PR #12 pending` | open PR number + review state (`approved` · `pending` · `changes requested` · `draft`) |
+| `📁 AI_WORKSPACE_Personal` | the launch folder, shimmering in its own [workspace colour](#colour-code-your-workspaces) |
+| `▸ my-app` | the repo you're in, shown only when it differs from the launch folder |
+| `feat/souls` | branch: white on `main`/`master`, amber elsewhere |
+| `✚ 3` | uncommitted files |
+| `⇡2` `⇣1` | commits ahead of and behind upstream, or `✓ synced` when clean and even |
+| `↻ 3h ago` | age of the upstream's last commit |
+| `gh:you/my-app` | the `origin` remote (`gh:` is github.com; other hosts show their domain) |
+| `PR #12 approved` | the open PR and its review state: `approved`, `pending`, `changes requested`, or `draft` |
 
-> `Line 4` is your optional **animal companion** — off by default (just a 🐿️), or a squirrel/fox/turtle with a hand-written line for your current git/context state. See [Animal companion](#animal-companion-optional).
+### Line 4: Companion
 
----
+Off by default. See [The Animal Companion](#the-animal-companion).
 
 ## Install
 
-**Prerequisite:** [Node.js](https://nodejs.org) on your `PATH`, and a **truecolor (24-bit) terminal** — Windows Terminal, iTerm2, WezTerm, or the VS Code terminal. (macOS **Terminal.app** and the classic Windows `cmd.exe` are *not* truecolor and will garble the colours.)
+You need [Node.js](https://nodejs.org) 18 or newer and a truecolor terminal: Windows Terminal, iTerm2, WezTerm, Kitty, or the VS Code terminal. macOS Terminal.app and the classic Windows console aren't truecolor and garble the colours.
 
-### Easiest: let your agent install it
+### Let Claude Install It
 
-This is a Claude Code tool, so the simplest install is to let Claude do it. Point Claude Code at this repo and say:
+Point Claude Code at this repo and say:
 
 > install this status line on my machine
 
-Claude reads [`AGENTS.md`](AGENTS.md) and copies every piece into `~/.claude/` — the dashboard, the `souls/`, the `/animal` command, and the hook — then tells you to restart. That's it.
+Claude follows [`AGENTS.md`](AGENTS.md): it copies the script, the souls, and the `/animal` command into `~/.claude/`, merges the settings block, checks the result, and tells you to restart.
 
-### Manual install
-
-Clone the repo and copy the pieces into your Claude config folder:
+### Install by Hand
 
 <details open>
 <summary><b>macOS / Linux</b></summary>
@@ -136,7 +119,7 @@ Copy-Item commands\animal.md "$HOME\.claude\commands\"
 ```
 </details>
 
-Then **merge [`settings.snippet.json`](settings.snippet.json) into `~/.claude/settings.json`** (merge it in, don't overwrite existing keys):
+Then merge this block into `~/.claude/settings.json`, keeping every key already there:
 
 ```json
 {
@@ -148,40 +131,59 @@ Then **merge [`settings.snippet.json`](settings.snippet.json) into `~/.claude/se
 }
 ```
 
-> On **Windows**, use the full path with forward slashes: `node C:/Users/YOUR_USERNAME/.claude/statusline.js`.
-> `refreshInterval: 1` redraws once a second to animate the workspace shimmer — drop it if you'd rather not repaint every second.
+On Windows, use the full path with forward slashes: `node C:/Users/YOUR_USERNAME/.claude/statusline.js`.
 
-**Restart Claude Code.** The dashboard appears at the bottom; line 4 invites you to run **`/animal`** to pick a companion (optional — see [Animal companion](#animal-companion-optional)).
+Restart Claude Code. The dashboard appears under the prompt, and line 4 invites you to run `/animal`. To check which version you have, run `node ~/.claude/statusline.js --version`.
 
----
+### Preview Without Claude Code
 
-## Try it without Claude Code
-
-Pipe the bundled sample payload straight into the script to see the session + limits lines render:
+Pipe in the sample payload:
 
 ```bash
-# bash
-cat examples/sample-input.json | node statusline.js
-```
-```powershell
-# PowerShell
-Get-Content examples/sample-input.json | node statusline.js
+cat examples/sample-input.json | node statusline.js            # bash
+Get-Content examples/sample-input.json | node statusline.js    # PowerShell
 ```
 
----
+## The Animal Companion
 
-## Customize — colour-code your workspaces
+<p align="center">
+  <img src="assets/readme/companions.svg" width="100%" alt="Line 4 in three states: the squirrel on 3 uncommitted files, the fox on a branch 4 commits behind origin, and the turtle on 82% context">
+</p>
 
-The signature trick: **each launch root gets its own colour**, so a glance at line 3 tells you *which world you're in*.
+Run `/animal` to pick a companion, or name one directly: `/animal fox`, `/animal off`. Every line it says is hand-written in a plain markdown soul file. It never calls a model.
 
-I run two workspaces and keep them strictly separate — a **personal** one and one for my day job at **Appsilon**. Two PowerShell launchers start Claude in each (see [`examples/profile.ps1`](examples/profile.ps1)):
+- 🐿️ squirrel: manic, cheerful, forgets where the nuts are
+- 🦊 fox: clever, sly, efficiency-minded, a little sassy
+- 🐢 turtle: slow, patient, talks you out of rushing
 
-```powershell
-function ccp { Set-Location 'D:\AI_WORKSPACE_Personal'; claude @args }   # personal
-function cca { Set-Location 'D:\AI_WORKSPACE_Appsilon'; claude @args }   # work
+The companion picks a new line every 30 seconds, based on what's going on. When something needs attention, two lines in three speak to it. The third is idle chatter, so the character still comes through.
+
+| Section | When it speaks | Placeholder |
+|---|---|---|
+| `dirty` | you have uncommitted changes | `{dirty}` |
+| `ahead` | you have commits you haven't pushed | `{ahead}` |
+| `behind` | upstream has commits you don't | `{behind}` |
+| `context` | the context window is 70% full or more | `{ctx}` |
+| `limits` | the 5-hour window is at 80%, or you're 15+ points ahead of the clock | `{limit}` |
+| `work` | any of the five above; also covers a soul that lacks one of them | |
+| `synced` | clean and even with upstream | |
+| `branch` | you're on a branch other than `main` or `master` | `{branch}` |
+| `norepo` | you're outside a git repo | |
+| `night` | midnight to 5 a.m., local time | |
+| `ambient` | idle chatter | |
+
+### Write Your Own Lines
+
+Each soul in [`souls/`](souls/) is a markdown file with one bullet list per section. Edit `~/.claude/souls/<animal>.md` and the next redraw picks it up. Add `:noun` to a count to get a plural: `{dirty:file}` becomes "1 file" or "3 files". A line whose placeholder has no value right now is skipped, so a half-filled line never reaches the screen.
+
+```markdown
+## behind
+- origin moved {behind:commit} ahead. pull before you pounce.
 ```
 
-…and `statusline.js` paints each root from `ROOT_PALETTES` — the personal root shimmers **cyan → mint**, the work root **amber → gold**:
+## Colour-Code Your Workspaces
+
+Each launch folder can shimmer in its own colours, so line 3 tells you at a glance which workspace you're in. I keep a personal workspace and a work one strictly apart. A PowerShell launcher starts Claude in each ([`examples/profile.ps1`](examples/profile.ps1)), and `ROOT_PALETTES` near the top of `statusline.js` paints them:
 
 ```js
 const ROOT_PALETTES = [
@@ -190,113 +192,65 @@ const ROOT_PALETTES = [
 ];
 ```
 
-Make it yours: edit the `match` regexes to your own root paths and pick any two RGB endpoints. Add as many workspaces as you like — anything unmatched falls back to a calm static blue. (Everything else is tweakable too: bar width, palette constants, and the per-segment colours all live at the top of the file.)
+Change the `match` patterns to your own folders and pick any two RGB colours. Add as many entries as you like; unmatched folders show in plain blue. The bar width and every segment colour are constants at the top of the same file.
 
----
+## How It Works
 
-## Animal companion (optional)
+Claude Code runs a status-line command after each message and every `refreshInterval` seconds, and hands it a JSON description of the session on stdin ([docs](https://docs.anthropic.com/en/docs/claude-code/statusline)). This script prints four lines from it:
 
-Line 4 can host a small **animal companion** that comments on your work. It's **off by default**, and it never calls a model: every line is hand-written in a plain-markdown soul file. Until you pick, line 4 invites you to run `/animal`; once you choose a character (or `off`), it settles in:
-
-| mode | line 4 | cost |
-|---|---|---|
-| **off** (default) | just the emoji | none |
-| **canned** | `🦊 ~ 14 files dirty and no commit. bold.` | none — rotates hand-written lines, keyed to your git/context state |
-
-Three souls ship in [`souls/`](souls/) — each a plain-markdown file with `work` and `ambient` (in-character musings shown when you're idle) sections you can **edit freely**:
-
-- 🐿️ **squirrel** — manic, enthusiastic hoarder; scattered, cheerful energy
-- 🦊 **fox** — clever and sly, with a little sass; efficiency-minded
-- 🐢 **turtle** — slow, patient, wise; gently talks you out of rushing
-
-**Pick a companion:** the [Install](#install) steps already placed the `souls/` and the `/animal` command. Just run **`/animal`** in Claude Code — an interactive picker pops up to choose your companion. (Or pass it directly: `/animal fox`, or `/animal off` to quiet it back to the emoji.)
-
-> If `/animal` doesn't autocomplete, **restart Claude Code** — slash commands load at session start.
-
-> **Removed: live "react" mode.** Earlier versions offered a third mode that fired a background `claude -p --model haiku` call on every prompt you submitted. It was removed in the Unreleased version: that child ran as a full Claude Code session with your permission rules and **could act on your prompt** — in a controlled run inside a project folder it created the file it was asked for, and two incidents of files rewritten with no transcript matched its timing exactly. If you still have `"mode": "react"` in `~/.claude/statusline-soul.json` it now behaves as `canned`; you can also drop the old `UserPromptSubmit` hook entry from `~/.claude/settings.json` (it is inert either way).
-
----
-
-## How it works
-
-Claude Code hands a status-line command a JSON blob on `stdin` describing the current session ([docs](https://docs.anthropic.com/en/docs/claude-code/statusline)). This script reads it and prints up to four lines. The fields it uses:
-
-| Field | Drives |
+| Input | Drives |
 |---|---|
-| `model.display_name`, `effort.level` | line 1 model + effort |
-| `context_window` | the gradient context bar |
-| `cost.total_lines_added/removed` | the `+/−` diff counter |
-| `rate_limits.five_hour` / `seven_day` | line 2 usage, pace arrows, reset countdowns |
-| `workspace.project_dir` / `current_dir` | launch root (shimmer) vs. the repo you're in |
+| `model.display_name`, `effort.level` | model and effort |
+| `context_window` | the context bar and token count |
+| `cost.total_lines_added` / `_removed` | the `+/−` counter |
+| `rate_limits.five_hour` / `.seven_day` | usage, pace, and reset countdowns |
+| `workspace.project_dir` / `.current_dir` | launch folder versus the repo you're in |
 | `pr` | the PR badge |
+| `git status`, `rev-parse`, `config`, `log` | branch, changes, ahead/behind, remote |
 
-Everything git-related comes from a couple of `git --no-optional-locks` calls in the current directory (capped, never throws). **No network, no API keys, no transcript reads, no model calls** — it stays well under ~100 ms. The animal companion (see [Animal companion](#animal-companion-optional)) only picks from hand-written lines.
-
-The context bar's gradient is ported from [`getagentseal/codeburn`](https://github.com/getagentseal/codeburn). The launch-root shimmer is the same gradient technique you can watch standalone in [`extras/shimmer.ps1`](extras/shimmer.ps1).
-
----
-
-## Project structure
-
-```text
-claude-code-statusline/
-├── statusline.js            # the dashboard — drop in ~/.claude/
-├── settings.snippet.json    # statusLine block to merge into settings.json
-├── examples/
-│   ├── sample-input.json    # pipe this in to preview without Claude Code
-│   └── profile.ps1          # ccp / cca dual-workspace launchers
-├── extras/
-│   └── shimmer.ps1          # standalone PowerShell gradient-shimmer demo
-├── souls/                   # the three animal companions — edit freely
-│   ├── squirrel.md
-│   ├── fox.md
-│   └── turtle.md
-├── commands/
-│   └── animal.md            # the /animal slash command
-├── test/                    # node:test suite (zero deps)
-├── AGENTS.md                # install playbook agents read when pointed at the repo
-├── CONTRIBUTING.md          # guide for working on the repo
-├── LICENSE                  # MIT
-└── README.md
-```
-
----
+The git reads use `--no-optional-locks` and short timeouts, and each session caches them for three seconds, so a burst of redraws runs git once. A render that Claude Code cancels exits on its own. Cache files live in `~/.claude/statusline-git.*`, and a new session clears the ones idle for a day.
 
 ## Troubleshooting
 
 <details>
-<summary>The bar / colours show up as plain text or escape codes</summary>
+<summary>The colours show up as escape codes</summary>
 
-You need a **truecolor (24-bit) terminal** — Windows Terminal, iTerm2, or VS Code's terminal all work. The classic `cmd.exe` console does not.
+Your terminal isn't truecolor. Use Windows Terminal, iTerm2, WezTerm, Kitty, or the VS Code terminal.
 </details>
 
 <details>
-<summary>The workspace name doesn't shimmer / animate</summary>
+<summary>The workspace name barely shimmers</summary>
 
-Add `"refreshInterval": 1` to the `statusLine` block — the shimmer advances with each redraw, so without periodic refresh it sits on one frame.
+The shimmer moves one step per redraw. With `refreshInterval: 10` that's once every ten seconds plus after each message. Lower values animate more, but every redraw starts a new process in every open session, so stay at 5 or above.
 </details>
 
 <details>
-<summary>Line 3 says "no repo" or is missing</summary>
+<summary><code>/animal</code> doesn't exist</summary>
 
-You're not inside a git repository, or `git` isn't on your `PATH`. The status line degrades gracefully — it just shows the launch folder and a 🐿️.
+Slash commands load at session start. Restart Claude Code, and check that `~/.claude/commands/animal.md` is there.
+</details>
+
+<details>
+<summary>Line 3 says "no repo"</summary>
+
+You're outside a git repository, or `git` isn't on your `PATH`. The line still shows the launch folder.
 </details>
 
 <details>
 <summary>Nothing appears after editing settings.json</summary>
 
-Restart Claude Code, and double-check the `command` path is correct (on Windows, the full `C:/Users/.../.claude/statusline.js` path with forward slashes).
+Restart Claude Code, and check the `command` path. On Windows it needs the full `C:/Users/.../.claude/statusline.js` path with forward slashes.
 </details>
 
----
+## Versions
 
-## License & credits
+Releases follow [semantic versioning](https://semver.org) and are listed on the [releases page](https://github.com/risukisu/claude-code-statusline/releases). [`CHANGELOG.md`](CHANGELOG.md) has the details, including upgrade notes for pre-1.0 installs. Working on the code? Start with [`CONTRIBUTING.md`](CONTRIBUTING.md).
 
-**[MIT](LICENSE)** — use it, fork it, bend it to your setup. PRs welcome.
+## License and Credits
 
-- Context-bar gradient ported from [getagentseal/codeburn](https://github.com/getagentseal/codeburn).
-- Built for [Claude Code](https://docs.anthropic.com/en/docs/claude-code) and the JSON it pipes to status-line commands.
+[MIT](LICENSE). Use it, fork it, bend it to your setup. PRs welcome.
 
-<div align="center">
-<sub>Made by <a href="https://github.com/risukisu">risu</a> · 🐿️</sub>
-</div>
+- The context-bar gradient is ported from [getagentseal/codeburn](https://github.com/getagentseal/codeburn).
+- The README visuals are drawn from the script's own output by [`assets/readme/source/`](assets/readme/source/).
+
+<p align="center"><sub>Made by <a href="https://github.com/risukisu">risu</a> · 🐿️</sub></p>

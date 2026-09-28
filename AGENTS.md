@@ -26,11 +26,12 @@ Create `~/.claude/`, `~/.claude/souls/`, and `~/.claude/commands/` if they don't
    - Add the `statusLine` block. **Do not add any hook** — this tool needs none.
    - **MERGE — do not overwrite.** Preserve every existing key. The result must be valid JSON.
    - On **Windows**, replace `YOUR_USERNAME` with the real username and keep forward slashes, e.g. `node C:/Users/<username>/.claude/statusline.js`.
-   - If an older install left a `hooks.UserPromptSubmit` entry running `statusline.js --hook`, remove that one entry (leave the user's other hooks alone). It is inert but pointless.
+   - If an older install left a `hooks.UserPromptSubmit` entry running `statusline.js --hook`, remove that one entry (leave the user's other hooks alone). It does nothing now.
 5. Tell the user, in these words:
    > Installed. **Restart Claude Code** — slash commands only load at session start — then run **`/animal`** to pick a companion.
 
 ## Verify before reporting success
+- Run: `node ~/.claude/statusline.js --version` → expect `claude-code-statusline <version>`.
 - Run: `printf '{}' | node ~/.claude/statusline.js` → expect a few lines of output and no error.
 - Confirm these exist: `~/.claude/statusline.js`, `~/.claude/commands/animal.md`, `~/.claude/souls/squirrel.md`.
 - Confirm `~/.claude/settings.json` is valid JSON and contains `statusLine`.
@@ -38,6 +39,6 @@ Create `~/.claude/`, `~/.claude/souls/`, and `~/.claude/commands/` if they don't
 If any check fails, fix it before telling the user it's done.
 
 ## Important notes
-- The companion is **off by default**. Both modes (`off`, `canned`) make **zero** model calls and read no transcript.
-- There is no `react` mode any more. If the user asks for it, say it was removed because the background `claude -p` child it spawned could act on their prompts; do not try to recreate it.
+- The companion is **off by default**. Both modes (`off`, `canned`) make **zero** model calls and read no transcript: every line comes from the soul files.
+- Upgrading? Copy the `souls/` files again: newer souls carry more lines and state sections. Older soul files still work.
 - Don't add extra hooks or status lines for other projects.

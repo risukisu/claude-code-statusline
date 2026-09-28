@@ -46,7 +46,7 @@ test("line 4 speaks in character when a companion is configured", () => {
       env: { ...process.env, CLAUDE_CONFIG_DIR: cfgDir },
     }).replace(/\x1B\[[0-9;]*m/g, "");
     const line4 = out.trimEnd().split("\n").pop();
-    assert.match(line4, /^🦊 ~ \S/);
+    assert.match(line4, /^╰─ 🦊 \S/);
     assert.doesNotMatch(line4, /\{[a-z]+(:[a-z]+)?\}/, "no unfilled placeholder may reach the screen");
   } finally {
     fs.rmSync(cfgDir, { recursive: true, force: true });

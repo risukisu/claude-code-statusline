@@ -5,6 +5,39 @@ Notable changes to claude-code-statusline, newest first. The project follows
 segments, soul sections, or options without breaking an existing install, and a major
 release changes the soul format, the config file, or the install layout.
 
+## [1.1.0] — 2026-09-28
+
+### Added
+
+- **A settings file.** `~/.claude/statusline.json` holds the theme, quiet mode, links,
+  context thresholds, workspace palettes, hidden segments, and bar width. Every key is
+  optional, a bad value falls back to its default, and upgrades never overwrite the file.
+  [`examples/statusline.json`](examples/statusline.json) lists every key.
+- **Clickable links.** `gh:owner/name` opens the repo and the PR badge opens the PR, in
+  terminals that support OSC 8 hyperlinks. Credentials in an https remote never reach the
+  link. GitLab merge requests read `MR !12`.
+- **Themes.** `high-contrast` lifts the greys; `colorblind` swaps green and red for
+  blue, yellow, and vermillion. The standard `NO_COLOR` variable prints plain text.
+- **Quiet mode, on by default.** Healthy segments such as `✓ synced` and low usage are
+  dimmed, so what needs attention stands out.
+
+### Changed
+
+- **The context bar warns earlier.** Amber from 30%, orange at 40%, red from 50%, where a
+  `⚠ /compact` hint appears. Both lines are settings. The companion's `context` lines
+  start at the same 50% (they started at 70%).
+- **Limit bars replace the pace arrows.** Line 2 draws each window as a bar: the fill is
+  what you've used, a `│` notch marks how much of the window's time has passed, and fill
+  past the notch is red overspend. `⇡N` and `⇣N` are gone from line 2.
+- **The companion speaks.** Line 4 reads `╰─ 🦊 line` with the line in italics, instead
+  of `🦊 ~ line`.
+
+### Upgrading From 1.0.0
+
+- Copy `statusline.js` into `~/.claude/` again. Souls and `/animal` are unchanged.
+- If you edited `ROOT_PALETTES` in the script, move those entries to `palettes` in
+  `~/.claude/statusline.json`.
+
 ## [1.0.0] — 2026-09-28
 
 The first tagged release.
@@ -55,4 +88,5 @@ The first tagged release.
 - If `~/.claude/settings.json` has a `UserPromptSubmit` hook running
   `statusline.js --hook`, delete that entry. It does nothing now.
 
+[1.1.0]: https://github.com/risukisu/claude-code-statusline/releases/tag/v1.1.0
 [1.0.0]: https://github.com/risukisu/claude-code-statusline/releases/tag/v1.0.0

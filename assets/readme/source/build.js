@@ -17,7 +17,7 @@ const path = require("node:path");
 const ROOT = path.join(__dirname, "..", "..", "..");
 const OUT = path.join(__dirname, "..");
 const STATUSLINE = path.join(ROOT, "statusline.js");
-const { parseSoul, pickCanned, fillLine } = require(STATUSLINE);
+const { parseSoul, pickCanned, fillLine, VERSION } = require(STATUSLINE);
 
 // ─── the demo session ─────────────────────────────────────────────────────
 const LAUNCH = "D:\\AI_WORKSPACE_Personal"; // matches a ROOT_PALETTES entry, so it shimmers
@@ -44,7 +44,7 @@ function payload(now, ctxPct) {
       seven_day: { used_percentage: 41, resets_at: s + 2 * 86400 + 3 * 3600 + 30 },
     },
     workspace: { project_dir: LAUNCH, current_dir: REPO },
-    pr: { number: 12, review_state: "approved" },
+    pr: { number: 12, url: "https://github.com/you/my-app/pull/12", review_state: "approved" },
   };
 }
 
@@ -76,17 +76,18 @@ const DEFAULT_FG = "#d7dce2";
 
 function spans(line) {
   const out = [];
-  let fg = DEFAULT_FG, bold = false;
-  for (const part of line.split(/(\x1b\[[0-9;]*m)/)) {
+  let fg = DEFAULT_FG, bold = false, italic = false;
+  for (const part of line.replace(/\x1b\]8;;[^\x07]*\x07/g, "").split(/(\x1b\[[0-9;]*m)/)) {
     const m = part.match(/^\x1b\[([0-9;]*)m$/);
     if (m) {
       const c = m[1].split(";").map(Number);
-      if (c[0] === 0) { fg = DEFAULT_FG; bold = false; }
+      if (c[0] === 0) { fg = DEFAULT_FG; bold = false; italic = false; }
       else if (c[0] === 1) bold = true;
+      else if (c[0] === 3) italic = true;
       else if (c[0] === 38 && c[1] === 2) fg = `rgb(${c[2]},${c[3]},${c[4]})`;
       continue;
     }
-    if (part) out.push({ text: part, fg, bold });
+    if (part) out.push({ text: part, fg, bold, italic });
   }
   return out;
 }
@@ -96,7 +97,7 @@ const SANS = "-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, s
 
 function textLine(line, x, y, size) {
   const t = spans(line).map((s) =>
-    `<tspan fill="${s.fg}"${s.bold ? ' font-weight="700"' : ""}>${esc(s.text)}</tspan>`).join("");
+    `<tspan fill="${s.fg}"${s.bold ? ' font-weight="700"' : ""}${s.italic ? ' font-style="italic"' : ""}>${esc(s.text)}</tspan>`).join("");
   return `<text x="${x}" y="${y}" font-family="${MONO}" font-size="${size}" xml:space="preserve">${t}</text>`;
 }
 
@@ -144,7 +145,7 @@ function hero(lines) {
     ${wordmark("STATUSLINE", 56, 46, 8)}
     <text x="56" y="150" font-family="${SANS}" font-size="24" fill="${C.fg}">A four-line dashboard for the bottom of your Claude Code terminal.</text>
     <text x="1144" y="60" text-anchor="end" font-family="${MONO}" font-size="16" fill="${C.muted}">claude-code-statusline</text>
-    <text x="1144" y="86" text-anchor="end" font-family="${MONO}" font-size="16" fill="${C.cyan}">v1.0.0</text>
+    <text x="1144" y="86" text-anchor="end" font-family="${MONO}" font-size="16" fill="${C.cyan}">v${VERSION}</text>
   </g>
   <g id="terminal">
     <rect x="${px}" y="${py}" width="${pw}" height="${H - py - 50}" rx="12" fill="${C.panel}" stroke="${C.rule}"/>

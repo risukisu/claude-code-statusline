@@ -7,17 +7,19 @@
  * (no network, no model calls — just the stdin payload and a few local git reads):
  *
  *   Line 1 (session):   ⏺  Model ✦ effort  ▕████████░░░░▏ 42% · 420k/1M  │  +156 −23
- *   Line 2 (limits):    ◷ 5h 24% ⇣8 · 1h47m left  │  7d 81% ⇡3 · 2d3h left
- *   Line 3 (git):       📁  LaunchRoot ▸ repo : branch · ✚3 · ⇡2 ⇣1 · ↻3h ago · gh:owner/name · PR #12 pending
- *   Line 4 (companion): 🦊 ~ a hand-written line for what's going on (optional, off by default)
+ *   Line 2 (limits):    ◷ 5h ▕█████│███░░▏ 80% · 2h30m left  │  7d ▕██░░░│░░░░░▏ 20% · 3d12h left
+ *   Line 3 (git):       📁  LaunchRoot ▸ repo : branch · ✚ 3 · ⇡2 ⇣1 · ↻ 3h ago · gh:owner/name · PR #12 pending
+ *   Line 4 (companion): ╰─ 🦊 a hand-written line for what's going on (optional, off by default)
  *
- * Pace arrows (line 2): ⇡N = used N% more of the window than the clock has
- * elapsed (burning fast), ⇣N = under pace. Line 3 leads with the LAUNCH folder
- * (workspace.project_dir) carrying a per-workspace identity shimmer — map your
- * own roots to colors in ROOT_PALETTES below. The defaults colour two example
- * workspaces: a personal root cyan→mint and a work root amber→gold. When the
- * session has cd'd into a different repo, a ▸ shows it and the git details
- * describe the repo you're actually in — gh: reads its real `origin` remote.
+ * Context bar (line 1): the heat runs blue → amber → orange at the warn line (40%) → red
+ * from the danger line (50%), where a /compact hint appears. Limit bars (line 2): the fill
+ * is how much of the window you've used, the │ notch is how much of its time has passed,
+ * and fill past the notch is overspend. Line 3 leads with the LAUNCH folder
+ * (workspace.project_dir), shimmering in its workspace colours; when the session has cd'd
+ * into a different repo, a ▸ shows it and the git details describe the repo you're in.
+ *
+ * Settings live in ~/.claude/statusline.json (all optional): theme, links, quiet, context
+ * thresholds, workspace palettes, hidden segments, bar width. See the README.
  *
  * Install: save to ~/.claude/statusline.js and register in ~/.claude/settings.json:
  *   "statusLine": { "type": "command", "command": "node ~/.claude/statusline.js", "refreshInterval": 10 }
@@ -26,7 +28,7 @@
  *   fire on every assistant message). Keep it ≥5: each render is a fresh node process,
  *   so a low value multiplied across open sessions is a real process-spawn cost.
  *
- * Context-bar gradient ported from getagentseal/codeburn. MIT licensed.
+ * Context-bar gradient first ported from getagentseal/codeburn. MIT licensed.
  * `node statusline.js --version` prints the installed version.
  */
 
@@ -36,7 +38,7 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 
-const VERSION = "1.0.0";
+const VERSION = "1.1.0";
 const EMOJI = { squirrel: "🐿️", fox: "🦊", turtle: "🐢" };
 const ANIMALS = ["squirrel", "fox", "turtle"];
 const MODES = ["off", "canned"];
@@ -52,6 +54,7 @@ const RENDER_WATCHDOG_MS = parseInt(process.env.STATUSLINE_WATCHDOG_MS || "", 10
 // and caches resolve to the real config dir — and tests can point it at a tmp dir.
 const claudeDir = () => process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), ".claude");
 const CONFIG_FILE = () => path.join(claudeDir(), "statusline-soul.json");
+const DASH_FILE = () => path.join(claudeDir(), "statusline.json");
 // Per-session cache key (session_id from the status-line stdin) so parallel sessions never
 // read each other's git snapshot.
 const sessionKey = (id) => (String(id || "default").replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 64) || "default");
@@ -93,50 +96,115 @@ function parseSoul(md) {
 module.exports.parseSoul = parseSoul;
 module.exports.SECTIONS = SECTIONS;
 
-// ─── ANSI helpers ──────────────────────────────────────────────────────────
-const ESC = "\x1b[";
-const RESET = ESC + "0m";
-const BOLD = ESC + "1m";
-const rgb = (r, g, b) => `${ESC}38;2;${r};${g};${b}m`;
-const DIM = rgb(110, 110, 110);
-const FAINT = rgb(70, 70, 70);
-const WHITE = rgb(235, 235, 235);
-const ORANGE = rgb(232, 116, 79); // ⏺ Claude warm
-const VIOLET = rgb(180, 142, 245); // effort
-const BLUE = rgb(91, 158, 245); // codeburn blue
-const GREEN = rgb(91, 245, 140);
-const YELLOW = rgb(245, 200, 91);
-const RED = rgb(245, 91, 91);
-const sep = ` ${FAINT}·${RESET} `; // ·
-const bigSep = `  ${FAINT}│${RESET}  `; // │
+// ─── themes ────────────────────────────────────────────────────────────────
+// Every colour the dashboard prints comes from one theme. `heat` holds the context-bar
+// anchors: start, amber (¾ of warn), orange (warn), red (danger), end.
+const THEMES = {
+  default: {
+    fg: [235, 235, 235], dim: [110, 110, 110], faint: [70, 70, 70], empty: [51, 51, 51],
+    accent: [232, 116, 79], effort: [180, 142, 245], blue: [91, 158, 245],
+    good: [91, 245, 140], warn: [245, 200, 91], bad: [245, 91, 91], speech: [170, 170, 170],
+    heat: [[91, 158, 245], [245, 200, 91], [255, 140, 66], [245, 91, 91], [190, 40, 60]],
+  },
+  "high-contrast": {
+    fg: [255, 255, 255], dim: [175, 175, 175], faint: [140, 140, 140], empty: [90, 90, 90],
+    accent: [255, 135, 95], effort: [200, 170, 255], blue: [110, 180, 255],
+    good: [80, 250, 123], warn: [255, 214, 0], bad: [255, 85, 85], speech: [215, 215, 215],
+    heat: [[110, 180, 255], [255, 214, 0], [255, 150, 50], [255, 85, 85], [220, 40, 60]],
+  },
+  // Okabe–Ito colours: blue / yellow / vermillion stay apart for red-green colour blindness.
+  colorblind: {
+    fg: [235, 235, 235], dim: [110, 110, 110], faint: [70, 70, 70], empty: [51, 51, 51],
+    accent: [230, 159, 0], effort: [204, 121, 167], blue: [86, 180, 233],
+    good: [86, 180, 233], warn: [240, 228, 66], bad: [213, 94, 0], speech: [170, 170, 170],
+    heat: [[86, 180, 233], [240, 228, 66], [230, 159, 0], [213, 94, 0], [160, 60, 0]],
+  },
+};
+module.exports.THEMES = THEMES;
 
-// ─── codeburn gradient bar (dashboard.tsx HBar, verbatim color math) ──────
-function gradientColor(pct) {
-  const lerp = (a, b, t) => Math.round(a + (b - a) * t);
-  let r, g, b;
-  if (pct <= 0.33) {
-    const t = pct / 0.33;
-    r = lerp(91, 245, t); g = lerp(158, 200, t); b = lerp(245, 91, t);
-  } else if (pct <= 0.66) {
-    const t = (pct - 0.33) / 0.33;
-    r = lerp(245, 255, t); g = lerp(200, 140, t); b = lerp(91, 66, t);
-  } else {
-    const t = (pct - 0.66) / 0.34;
-    r = lerp(255, 245, t); g = lerp(140, 91, t); b = lerp(66, 91, t);
-  }
-  return rgb(r, g, b);
+// P holds the ready-made escape codes for the active theme. With colour off every entry
+// is "", so the same template strings print plain text.
+const P = {};
+let LINKS = true;
+function setTheme(name, color = true, links = true) {
+  const t = THEMES[name] || THEMES.default;
+  const code = (c) => (color ? `\x1b[38;2;${c[0]};${c[1]};${c[2]}m` : "");
+  for (const k of Object.keys(t)) if (k !== "heat") P[k] = code(t[k]);
+  P.heat = t.heat;
+  P.color = color;
+  P.reset = color ? "\x1b[0m" : "";
+  P.bold = color ? "\x1b[1m" : "";
+  P.italic = color ? "\x1b[3m" : "";
+  P.sep = ` ${P.faint}·${P.reset} `;
+  P.bigSep = `  ${P.faint}│${P.reset}  `;
+  LINKS = color && links;
 }
+setTheme("default");
+const rgb = (r, g, b) => (P.color ? `\x1b[38;2;${r};${g};${b}m` : "");
+// OSC 8 hyperlink: clickable in terminals that support it, plain text elsewhere.
+const link = (url, text) => (LINKS && url ? `\x1b]8;;${url}\x07${text}\x1b]8;;\x07` : text);
 
-function bar(pctUsed, width) {
+// ─── dashboard settings: ~/.claude/statusline.json ────────────────────────
+const HIDEABLE = ["effort", "tokens", "diff", "limits", "sync", "remote", "pr", "companion"];
+const DEFAULT_DASH = {
+  theme: "default", links: true, quiet: true, context: { warn: 40, danger: 50 },
+  palettes: null, hide: [], barWidth: null,
+};
+module.exports.DEFAULT_DASH = DEFAULT_DASH;
+
+const hexRGB = (h) => {
+  const m = typeof h === "string" && h.match(/^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i);
+  return m ? [parseInt(m[1], 16), parseInt(m[2], 16), parseInt(m[3], 16)] : null;
+};
+const normPath = (p) => String(p).replace(/\\/g, "/").toLowerCase();
+
+function loadDashConfig(file) {
+  const out = JSON.parse(JSON.stringify(DEFAULT_DASH));
+  let c;
+  try { c = JSON.parse(fs.readFileSync(file, "utf8")); } catch { return out; }
+  if (!c || typeof c !== "object") return out;
+  if (THEMES[c.theme]) out.theme = c.theme;
+  if (typeof c.links === "boolean") out.links = c.links;
+  if (typeof c.quiet === "boolean") out.quiet = c.quiet;
+  const cx = c.context || {};
+  const ok = (n) => Number.isFinite(n) && n > 0 && n <= 100;
+  if (ok(cx.warn) && ok(cx.danger) && cx.warn < cx.danger) out.context = { warn: cx.warn, danger: cx.danger };
+  if (Array.isArray(c.hide)) out.hide = c.hide.filter((h) => HIDEABLE.includes(h));
+  if (Number.isInteger(c.barWidth) && c.barWidth >= 4 && c.barWidth <= 40) out.barWidth = c.barWidth;
+  if (Array.isArray(c.palettes)) {
+    out.palettes = c.palettes.map((p) => {
+      const c1 = hexRGB(p && p.from), c2 = hexRGB(p && p.to);
+      const match = p && typeof p.match === "string" ? normPath(p.match) : "";
+      return match && c1 && c2 ? { test: (dir) => normPath(dir).includes(match), c1, c2 } : null;
+    }).filter(Boolean);
+  }
+  return out;
+}
+module.exports.loadDashConfig = loadDashConfig;
+
+// ─── context heat bar ─────────────────────────────────────────────────────
+// Front-loaded on purpose: answers get worse long before the window is full, so the
+// red arrives at the danger line (50% by default), not at the end.
+function heatRGB(pos, warn, danger, stops = THEMES.default.heat) {
+  const at = [0, (warn * 0.75) / 100, warn / 100, danger / 100, 1];
+  const p = Math.max(0, Math.min(1, pos));
+  let i = 0;
+  while (i < at.length - 2 && p > at[i + 1]) i++;
+  const t = at[i + 1] === at[i] ? 1 : (p - at[i]) / (at[i + 1] - at[i]);
+  return stops[i].map((v, k) => Math.round(v + (stops[i + 1][k] - v) * t));
+}
+module.exports.heatRGB = heatRGB;
+
+function heatBar(pctUsed, width, warn, danger) {
   const filled = Math.max(0, Math.min(width, Math.round((pctUsed / 100) * width)));
   let out = "";
-  for (let i = 0; i < filled; i++) out += gradientColor(i / width) + "█"; // █
-  out += rgb(51, 51, 51) + "░".repeat(width - filled); // ░
-  return `${FAINT}▕${out}${RESET}${FAINT}▏${RESET}`; // ▕ ... ▏
+  for (let i = 0; i < filled; i++) out += rgb(...heatRGB(i / width, warn, danger, P.heat)) + "█";
+  out += P.empty + "░".repeat(width - filled);
+  return `${P.faint}▕${out}${P.reset}${P.faint}▏${P.reset}`;
 }
 
 function pctColor(p) {
-  return p >= 80 ? RED : p >= 50 ? YELLOW : GREEN;
+  return p >= 80 ? P.bad : p >= 50 ? P.warn : P.good;
 }
 
 function fmtTokens(n) {
@@ -209,10 +277,11 @@ module.exports.computeGitSnapshot = computeGitSnapshot;
 // ─── workspace-identity shimmer (port of feedback-shimmer.ps1) ─────────────
 // CSS stops: 0% c1 -> 40% c2 -> 60% c1 -> 100% c2, phase sweeps a full
 // cycle every 3s of wall clock — each status line refresh shows the next frame.
+// Built-in palettes; `palettes` in ~/.claude/statusline.json replaces them.
 const ROOT_PALETTES = [
   { match: /^[a-z]:[\\/]+ai_workspace_personal/i, c1: [6, 182, 212], c2: [74, 222, 128] },   // cyan → mint
   { match: /^[a-z]:[\\/]+ai_workspace_appsilon/i, c1: [245, 158, 11], c2: [253, 230, 138] }, // amber → gold
-];
+].map((p) => ({ test: (dir) => p.match.test(dir), c1: p.c1, c2: p.c2 }));
 
 function shimmer(text, c1, c2) {
   const t = (Date.now() % 3000) / 3000;
@@ -230,37 +299,54 @@ function shimmer(text, c1, c2) {
       Math.round(c1[2] + (c2[2] - c1[2]) * f),
     ) + text[i];
   }
-  return out + RESET;
+  return out + P.reset;
 }
 
 // ─── origin remote of the CURRENT dir (not the session's launch repo) ──────
+// Only host/owner/name are kept, so credentials in an https remote never reach the screen.
 function parseRemote(url) {
   if (!url) return null;
   const m = url.match(/(?:@|:\/\/)([^/:]+)[/:]([^/]+)\/([^/]+?)(?:\.git)?\/?$/);
   return m ? { host: m[1], owner: m[2], name: m[3] } : null;
 }
 
-// ─── rate-limit window: used %, pace vs time elapsed, reset countdown ─────
+// ─── rate-limit windows: usage bar with a clock notch, reset countdown ────
 // Pace = % of the window used minus % of the window's time elapsed. Positive = burning fast.
 function windowPace(win, windowLen) {
   if (!win || win.used_percentage == null || !win.resets_at) return null;
   const remaining = win.resets_at - Math.floor(Date.now() / 1000);
   if (remaining <= 0 || remaining > windowLen) return null;
   const elapsedPct = (1 - remaining / windowLen) * 100;
-  return { delta: Math.round(win.used_percentage - elapsedPct), remaining };
+  return { delta: Math.round(win.used_percentage - elapsedPct), elapsedPct, remaining };
 }
 
-function limitSeg(label, win, windowLen) {
+// The cells of a limit bar: "fill" (used, within pace), "over" (used past the notch),
+// "empty", and one "notch" where the clock is. No reset time → no notch.
+function limitCells(usedPct, elapsedPct, width) {
+  const clamp = (n) => Math.max(0, Math.min(width, Math.round((n / 100) * width)));
+  const filled = clamp(usedPct);
+  const notch = elapsedPct == null ? null : clamp(elapsedPct);
+  const out = [];
+  for (let i = 0; i < width; i++) {
+    if (i === notch) out.push("notch");
+    out.push(i < filled ? (notch != null && i >= notch ? "over" : "fill") : "empty");
+  }
+  if (notch === width) out.push("notch");
+  return out;
+}
+module.exports.limitCells = limitCells;
+
+function limitSeg(label, win, windowLen, width, quiet) {
   if (!win || win.used_percentage == null) return null;
   const p = Math.round(win.used_percentage);
-  let seg = `${DIM}${label}${RESET} ${pctColor(p)}${p}%${RESET}`;
   const pace = windowPace(win, windowLen);
-  if (pace) {
-    const { delta, remaining } = pace;
-    if (delta >= 2) seg += ` ${delta >= 15 ? RED : YELLOW}⇡${delta}${RESET}`;
-    else if (delta <= -2) seg += ` ${GREEN}⇣${-delta}${RESET}`;
-    seg += `${sep}${DIM}${fmtDur(remaining)} left${RESET}`;
-  }
+  const cells = limitCells(win.used_percentage, pace ? pace.elapsedPct : null, width);
+  const fillCol = p >= 50 ? P.warn : P.good; // tops out at amber, so only overspend is red
+  const glyph ={ fill: `${fillCol}█`, over: `${P.bad}█`, empty: `${P.empty}░`, notch: `${P.fg}│` };
+  const barStr = `${P.faint}▕${cells.map((c) => glyph[c]).join("")}${P.reset}${P.faint}▏${P.reset}`;
+  const calm = quiet && p < 50 && !cells.includes("over");
+  let seg = `${P.dim}${label}${P.reset} ${barStr} ${calm ? P.dim : pctColor(p)}${p}%${P.reset}`;
+  if (pace) seg += `${P.sep}${P.dim}${fmtDur(pace.remaining)} left${P.reset}`;
   return seg;
 }
 
@@ -312,6 +398,8 @@ module.exports.gitCacheFresh = gitCacheFresh;
 module.exports.sessionKey = sessionKey;
 
 // ─── line-4 dispatcher ────────────────────────────────────────────────────
+// The companion speaks under line 3: a ╰─ connector, the animal, and its line in italics,
+// so it reads as speech rather than one more readout.
 function renderLine4(cfg, soul, ctx, now) {
   const emoji = EMOJI[cfg.animal] || EMOJI.squirrel;
   if (cfg.mode === "off") {
@@ -319,14 +407,15 @@ function renderLine4(cfg, soul, ctx, now) {
       // Only advertise /animal when the command is actually installed — a statusline-only
       // install must not nudge toward a command that doesn't exist.
       return ctx.hasCommand
-        ? `${DIM}${truncate(`${emoji} · restart Claude Code, then /animal to pick a companion`, ctx.cols)}${RESET}`
+        ? `${P.dim}${truncate(`${emoji} · restart Claude Code, then /animal to pick a companion`, ctx.cols)}${P.reset}`
         : emoji;
     }
     return emoji;
   }
   if (!soul) return emoji; // soul file missing → degrade gracefully
   const text = pickCanned(soul, ctx, now); // hand-written lines only — never a model call
-  return text ? truncate(`${emoji} ~ ${text}`, ctx.cols) : emoji;
+  if (!text) return emoji;
+  return `${P.faint}╰─${P.reset} ${emoji} ${P.italic}${P.speech}${truncate(text, (ctx.cols || 120) - 6)}${P.reset}`;
 }
 module.exports.renderLine4 = renderLine4;
 
@@ -344,8 +433,14 @@ process.stdin.on("end", () => {
   let d = {};
   try { d = JSON.parse(raw); } catch { /* render with defaults */ }
 
+  const dash = loadDashConfig(DASH_FILE());
+  setTheme(dash.theme, !process.env.NO_COLOR, dash.links);
+  const hidden = new Set(dash.hide);
+  const { warn, danger } = dash.context;
+
   const cols = parseInt(process.env.COLUMNS || "", 10) || 120;
-  const barW = cols < 90 ? 12 : 20;
+  const barW = dash.barWidth || (cols < 90 ? 12 : 20);
+  const limitW = cols < 90 ? 6 : 10;
 
   // — Animal companion setup (canned lines only: no model calls, no transcript reads) —
   const cfgFile = CONFIG_FILE();
@@ -357,54 +452,62 @@ process.stdin.on("end", () => {
   const nowMs = Date.now();
   const five = (d.rate_limits || {}).five_hour;
   const fivePace = windowPace(five, 5 * 3600);
-  const line4 = (git) => renderLine4(cfg, soul, {
-    hasConfig, hasCommand, cols,
-    ...git,
-    contextPct: (d.context_window && d.context_window.used_percentage) || 0,
-    limitPct: five && five.used_percentage != null ? five.used_percentage : null,
-    pace: fivePace ? fivePace.delta : null,
-    hour: new Date(nowMs).getHours(),
-  }, nowMs);
+  const line4 = (git) => {
+    if (hidden.has("companion")) return;
+    console.log(renderLine4(cfg, soul, {
+      hasConfig, hasCommand, cols,
+      ...git,
+      contextPct: (d.context_window && d.context_window.used_percentage) || 0,
+      ctxDanger: danger,
+      limitPct: five && five.used_percentage != null ? five.used_percentage : null,
+      pace: fivePace ? fivePace.delta : null,
+      hour: new Date(nowMs).getHours(),
+    }, nowMs));
+  };
 
   // — Line 1 (session): model · effort · context bar · lines changed —
   const model = (d.model && d.model.display_name) || "Claude";
-  let head = `${ORANGE}⏺${RESET}  ${BOLD}${WHITE}${model}${RESET}`;
+  let head = `${P.accent}⏺${P.reset}  ${P.bold}${P.fg}${model}${P.reset}`;
   const effort = d.effort && d.effort.level;
-  if (effort) head += ` ${VIOLET}✦ ${effort}${RESET}`;
-  else if (d.thinking && d.thinking.enabled) head += ` ${VIOLET}✦ thinking${RESET}`;
+  if (!hidden.has("effort")) {
+    if (effort) head += ` ${P.effort}✦ ${effort}${P.reset}`;
+    else if (d.thinking && d.thinking.enabled) head += ` ${P.effort}✦ thinking${P.reset}`;
+  }
 
   const cw = d.context_window || {};
   let ctxSeg;
   if (cw.used_percentage != null) {
-    const pct = cw.used_percentage;
+    const pct = Math.round(cw.used_percentage);
     const used = (cw.total_input_tokens || 0) + (cw.total_output_tokens || 0);
-    ctxSeg = `${bar(pct, barW)} ${pctColor(pct)}${pct}%${RESET}` +
-      `${sep}${DIM}${fmtTokens(used)}/${fmtTokens(cw.context_window_size)}${RESET}`;
+    const pctCol = pct >= danger ? P.bad + P.bold : pct >= warn ? P.warn : dash.quiet ? P.dim : P.good;
+    ctxSeg = `${heatBar(pct, barW, warn, danger)} ${pctCol}${pct}%${P.reset}`;
+    if (!hidden.has("tokens")) ctxSeg += `${P.sep}${P.dim}${fmtTokens(used)}/${fmtTokens(cw.context_window_size)}${P.reset}`;
+    if (pct >= danger) ctxSeg += `${P.sep}${P.bad}⚠ /compact${P.reset}`;
   } else {
-    ctxSeg = `${bar(0, barW)} ${DIM}—${RESET}`;
+    ctxSeg = `${heatBar(0, barW, warn, danger)} ${P.dim}—${P.reset}`;
   }
 
   const cost = d.cost || {};
   const la = cost.total_lines_added || 0, lr = cost.total_lines_removed || 0;
-  const diffSeg = (la || lr) ? `${bigSep}${GREEN}+${la}${RESET} ${RED}−${lr}${RESET}` : "";
+  const diffSeg = (la || lr) && !hidden.has("diff") ? `${P.bigSep}${P.good}+${la}${P.reset} ${P.bad}−${lr}${P.reset}` : "";
 
   console.log(`${head}  ${ctxSeg}${diffSeg}`);
 
-  // — Line 2 (limits): 5h/7d usage · pace arrow · reset countdown —
+  // — Line 2 (limits): usage bar with a clock notch · % · reset countdown —
   const rl = d.rate_limits || {};
-  const limitSegs = [
-    limitSeg("5h", rl.five_hour, 5 * 3600),
-    limitSeg("7d", rl.seven_day, 7 * 86400),
+  const limitSegs = hidden.has("limits") ? [] : [
+    limitSeg("5h", rl.five_hour, 5 * 3600, limitW, dash.quiet),
+    limitSeg("7d", rl.seven_day, 7 * 86400, limitW, dash.quiet),
   ].filter(Boolean);
-  if (limitSegs.length) console.log(`${DIM}◷${RESET} ` + limitSegs.join(bigSep));
+  if (limitSegs.length) console.log(`${P.dim}◷${P.reset} ` + limitSegs.join(P.bigSep));
 
   // — Line 3 (git): 📁 launch root [▸ current repo] : branch · dirty · ahead/behind · sync · remote · PR —
   const basename = (p) => p.replace(/[\\/]+$/, "").split(/[\\/]/).pop();
   const norm = (p) => p.replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
   const cwd = (d.workspace && d.workspace.current_dir) || d.cwd || process.cwd();
   const launchDir = (d.workspace && d.workspace.project_dir) || cwd;
-  const pal = ROOT_PALETTES.find((p) => p.match.test(launchDir));
-  const folderDisp = pal ? shimmer(basename(launchDir), pal.c1, pal.c2) : `${BLUE}${basename(launchDir)}${RESET}`;
+  const pal = (dash.palettes || ROOT_PALETTES).find((p) => p.test(launchDir));
+  const folderDisp = pal ? shimmer(basename(launchDir), pal.c1, pal.c2) : `${P.blue}${basename(launchDir)}${P.reset}`;
   // Per-session git cache: reuse a fresh snapshot, else read git once and store it.
   const gitCacheFile = GIT_CACHE_FILE(d.session_id);
   let snap = readCache(gitCacheFile);
@@ -420,49 +523,53 @@ process.stdin.on("end", () => {
   // where the session actually is, when it differs from the launch root
   let hereSeg = "";
   if (topLevel && norm(topLevel) !== norm(launchDir)) {
-    hereSeg = ` ${FAINT}▸${RESET} ${WHITE}${basename(topLevel)}${RESET}`;
+    hereSeg = ` ${P.faint}▸${P.reset} ${P.fg}${basename(topLevel)}${P.reset}`;
   }
 
   if (!g) {
-    console.log(`📁  ${folderDisp}${hereSeg}${sep}${DIM}no repo${RESET}`);
-    console.log(line4({ hasRepo: false, dirty: 0 }));
+    console.log(`📁  ${folderDisp}${hereSeg}${P.sep}${P.dim}no repo${P.reset}`);
+    line4({ hasRepo: false, dirty: 0 });
     return;
   }
 
   const branch = snap.branch;
   const isDefault = branch === "master" || branch === "main";
-  const branchCol = isDefault ? WHITE : YELLOW;
-  let line3 = `📁  ${folderDisp}${hereSeg} ${FAINT}:${RESET} ${branchCol}${branch}${RESET}`;
+  const branchCol = isDefault ? P.fg : P.warn;
+  let line3 = `📁  ${folderDisp}${hereSeg} ${P.faint}:${P.reset} ${branchCol}${branch}${P.reset}`;
 
-  if (g.dirty > 0) line3 += `${sep}${YELLOW}✚ ${g.dirty}${RESET}`;
+  if (g.dirty > 0) line3 += `${P.sep}${P.warn}✚ ${g.dirty}${P.reset}`;
 
   const origin = parseRemote(snap.originUrl);
 
   if (!g.upstream) {
-    line3 += `${sep}${origin ? `${YELLOW}unpushed branch${RESET}` : `${DIM}local only${RESET}`}`;
+    line3 += `${P.sep}${origin ? `${P.warn}unpushed branch${P.reset}` : `${P.dim}local only${P.reset}`}`;
   } else {
     const fly = [];
-    if (g.ahead > 0) fly.push(`${YELLOW}⇡${g.ahead}${RESET}`);
-    if (g.behind > 0) fly.push(`${RED}⇣${g.behind}${RESET}`);
-    if (fly.length) line3 += sep + fly.join(" ");
-    else if (g.dirty === 0) line3 += `${sep}${GREEN}✓ synced${RESET}`;
-    if (g.syncAge) line3 += `${sep}${DIM}↻ ${g.syncAge}${RESET}`;
+    if (g.ahead > 0) fly.push(`${P.warn}⇡${g.ahead}${P.reset}`);
+    if (g.behind > 0) fly.push(`${P.bad}⇣${g.behind}${P.reset}`);
+    if (fly.length) line3 += P.sep + fly.join(" ");
+    else if (g.dirty === 0) line3 += `${P.sep}${dash.quiet ? P.dim : P.good}✓ synced${P.reset}`;
+    if (g.syncAge && !hidden.has("sync")) line3 += `${P.sep}${P.dim}↻ ${g.syncAge}${P.reset}`;
   }
-  if (origin) line3 += `${sep}${FAINT}${origin.host === "github.com" ? "gh" : origin.host}:${origin.owner}/${origin.name}${RESET}`;
+  if (origin && !hidden.has("remote")) {
+    const label = `${origin.host === "github.com" ? "gh" : origin.host}:${origin.owner}/${origin.name}`;
+    line3 += `${P.sep}${P.faint}${link(`https://${origin.host}/${origin.owner}/${origin.name}`, label)}${P.reset}`;
+  }
 
-  if (d.pr && d.pr.number) {
-    const prCol = { approved: GREEN, pending: YELLOW, changes_requested: RED, draft: DIM }[d.pr.review_state] || DIM;
+  if (d.pr && d.pr.number && !hidden.has("pr")) {
+    const prCol = { approved: P.good, pending: P.warn, changes_requested: P.bad, draft: P.dim }[d.pr.review_state] || P.dim;
     const prState = d.pr.review_state ? " " + d.pr.review_state.replace(/_/g, " ") : "";
-    line3 += `${sep}${prCol}PR #${d.pr.number}${prState}${RESET}`;
+    const label = d.pr.kind === "mr" ? `MR !${d.pr.number}` : `PR #${d.pr.number}`;
+    line3 += `${P.sep}${prCol}${link(d.pr.url, `${label}${prState}`)}${P.reset}`;
   }
 
   console.log(line3);
 
   // — Line 4: animal companion (canned lines; no model call) —
-  console.log(line4({
+  line4({
     hasRepo: true, dirty: g.dirty, ahead: g.ahead, behind: g.behind,
     upstream: !!g.upstream, branch,
-  }));
+  });
 });
 }
 
@@ -495,10 +602,11 @@ function fillLine(line, vals) {
 }
 module.exports.fillLine = fillLine;
 
-// Which states hold right now, each list in priority order.
+// Which states hold right now, each list in priority order. Context speaks from the
+// danger line (ctxDanger, 50% by default) — the same point the bar turns red.
 function activeStates(ctx) {
   const on = {
-    context: ctx.contextPct >= 70,
+    context: ctx.contextPct >= (ctx.ctxDanger || DEFAULT_DASH.context.danger),
     limits: ctx.limitPct >= 80 || ctx.pace >= 15,
     behind: ctx.hasRepo && ctx.behind > 0,
     dirty: ctx.hasRepo && ctx.dirty > 0,

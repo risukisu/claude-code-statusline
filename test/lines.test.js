@@ -57,6 +57,13 @@ test("behind, ahead, limits and context each trigger their own section", () => {
   assert.strictEqual(pickCanned(s, { ...base, limitPct: 40, pace: 20 }, 0), "L");
   assert.strictEqual(pickCanned(s, { ...base, contextPct: 72 }, 0), "C");
 });
+test("context speaks from the danger line (50% by default, or ctxDanger)", () => {
+  const s = { ambient: ["A"], context: ["C"] };
+  const at = (pct, extra = {}) => pickCanned(s, { hasRepo: false, dirty: 0, contextPct: pct, ...extra }, 0);
+  assert.strictEqual(at(52), "C");
+  assert.strictEqual(at(45), "A");
+  assert.strictEqual(at(52, { ctxDanger: 70 }), "A");
+});
 test("calm states share the rotation with ambient", () => {
   const s = { ambient: ["A0", "A1"], synced: ["S0", "S1"] };
   const synced = { hasRepo: true, dirty: 0, ahead: 0, behind: 0, upstream: true, branch: "main", contextPct: 5 };

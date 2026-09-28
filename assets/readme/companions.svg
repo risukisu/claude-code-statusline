@@ -7,16 +7,16 @@
   <g>
     <rect x="50" y="84" width="1100" height="52" rx="10" fill="#10141b" stroke="#222a35"/>
     <text x="74" y="117" font-family="'Cascadia Mono', 'SF Mono', ui-monospace, Menlo, Consolas, 'Liberation Mono', monospace" font-size="16" fill="#7d8590">✚ 3 uncommitted</text>
-    <text x="290" y="117" font-family="'Cascadia Mono', 'SF Mono', ui-monospace, Menlo, Consolas, 'Liberation Mono', monospace" font-size="19" xml:space="preserve"><tspan fill="#d7dce2">🐿️ ~ 3 files out in the open! bury it all in a commit!</tspan></text>
+    <text x="290" y="117" font-family="'Cascadia Mono', 'SF Mono', ui-monospace, Menlo, Consolas, 'Liberation Mono', monospace" font-size="19" xml:space="preserve"><tspan fill="rgb(70,70,70)">╰─</tspan><tspan fill="#d7dce2"> 🐿️ </tspan><tspan fill="rgb(170,170,170)" font-style="italic">3 files out in the open! bury it all in a commit!</tspan></text>
   </g>
   <g>
     <rect x="50" y="148" width="1100" height="52" rx="10" fill="#10141b" stroke="#222a35"/>
     <text x="74" y="181" font-family="'Cascadia Mono', 'SF Mono', ui-monospace, Menlo, Consolas, 'Liberation Mono', monospace" font-size="16" fill="#7d8590">⇣4 behind origin</text>
-    <text x="290" y="181" font-family="'Cascadia Mono', 'SF Mono', ui-monospace, Menlo, Consolas, 'Liberation Mono', monospace" font-size="19" xml:space="preserve"><tspan fill="#d7dce2">🦊 ~ origin moved 4 commits ahead. pull before you pounce.</tspan></text>
+    <text x="290" y="181" font-family="'Cascadia Mono', 'SF Mono', ui-monospace, Menlo, Consolas, 'Liberation Mono', monospace" font-size="19" xml:space="preserve"><tspan fill="rgb(70,70,70)">╰─</tspan><tspan fill="#d7dce2"> 🦊 </tspan><tspan fill="rgb(170,170,170)" font-style="italic">origin moved 4 commits ahead. pull before you pounce.</tspan></text>
   </g>
   <g>
     <rect x="50" y="212" width="1100" height="52" rx="10" fill="#10141b" stroke="#222a35"/>
     <text x="74" y="245" font-family="'Cascadia Mono', 'SF Mono', ui-monospace, Menlo, Consolas, 'Liberation Mono', monospace" font-size="16" fill="#7d8590">82% context</text>
-    <text x="290" y="245" font-family="'Cascadia Mono', 'SF Mono', ui-monospace, Menlo, Consolas, 'Liberation Mono', monospace" font-size="19" xml:space="preserve"><tspan fill="#d7dce2">🐢 ~ 82% of context. a full shell is a heavy shell.</tspan></text>
+    <text x="290" y="245" font-family="'Cascadia Mono', 'SF Mono', ui-monospace, Menlo, Consolas, 'Liberation Mono', monospace" font-size="19" xml:space="preserve"><tspan fill="rgb(70,70,70)">╰─</tspan><tspan fill="#d7dce2"> 🐢 </tspan><tspan fill="rgb(170,170,170)" font-style="italic">82% of context. a full shell is a heavy shell.</tspan></text>
   </g>
 </svg>

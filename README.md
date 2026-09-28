@@ -26,7 +26,7 @@ It reads the JSON Claude Code already pipes to a status-line command, plus a few
 - [What Each Line Shows](#what-each-line-shows)
 - [Install](#install)
 - [The Animal Companion](#the-animal-companion)
-- [Colour-Code Your Workspaces](#colour-code-your-workspaces)
+- [Settings](#settings)
 - [How It Works](#how-it-works)
 - [Troubleshooting](#troubleshooting)
 - [Versions](#versions)
@@ -36,27 +36,29 @@ It reads the JSON Claude Code already pipes to a status-line command, plus a few
 ### Line 1: Session
 
 ```text
-⏺  Opus 5.5 ✦ high  ▕████████████░░░░░░░░▏ 61% · 610k/1M  │  +156 −23
+⏺  Opus 5.5 ✦ high  ▕████████████░░░░░░░░▏ 61% · 610k/1M · ⚠ /compact  │  +156 −23
 ```
 
 | Segment | Meaning |
 |---|---|
 | `Opus 5.5` `✦ high` | active model and reasoning effort |
-| `▕████░░▏ 61%` | context used; the bar runs blue → amber → red as it fills |
+| `▕████░░▏ 61%` | context used. The heat is front-loaded: amber from 30%, orange at 40%, red from 50% |
+| `⚠ /compact` | appears at 50%, where answers start to suffer; compact or start a fresh session |
 | `610k/1M` | tokens used of the context window (scales to your window, 1M included) |
 | `+156 −23` | lines added and removed this session |
 
 ### Line 2: Limits
 
 ```text
-◷ 5h 58% ⇣6 · 1h47m left  │  7d 41% ⇣29 · 2d3h left
+◷ 5h ▕█████│███░░▏ 80% · 2h30m left  │  7d ▕████░░│░░░░▏ 41% · 3d0h left
 ```
 
 | Segment | Meaning |
 |---|---|
-| `5h 58%` · `7d 41%` | share of the 5-hour and 7-day rate-limit windows used (green → amber → red) |
-| `⇡N` / `⇣N` | pace against the clock: `⇡` means you've used N points more than the time elapsed, `⇣` means you're under |
-| `1h47m left` | time until that window resets |
+| `▕█████` | how much of the 5-hour or 7-day window you've used |
+| `│` | how much of the window's time has passed. Fill that stops before the notch means you're within pace |
+| `███` past the notch | red: you're spending faster than the clock, and will run out before the reset |
+| `80%` · `2h30m left` | usage in numbers, and time until the window resets |
 
 ### Line 3: Git
 
@@ -72,12 +74,16 @@ It reads the JSON Claude Code already pipes to a status-line command, plus a few
 | `✚ 3` | uncommitted files |
 | `⇡2` `⇣1` | commits ahead of and behind upstream, or `✓ synced` when clean and even |
 | `↻ 3h ago` | age of the upstream's last commit |
-| `gh:you/my-app` | the `origin` remote (`gh:` is github.com; other hosts show their domain) |
-| `PR #12 approved` | the open PR and its review state: `approved`, `pending`, `changes requested`, or `draft` |
+| `gh:you/my-app` | the `origin` remote; click it to open the repo (`gh:` is github.com; other hosts show their domain) |
+| `PR #12 approved` | the open PR and its review state: `approved`, `pending`, `changes requested`, or `draft`; click it to open the PR. GitLab merge requests read `MR !12` |
 
 ### Line 4: Companion
 
-Off by default. See [The Animal Companion](#the-animal-companion).
+```text
+╰─ 🦊 3 files dirty and no commit. living dangerously.
+```
+
+Off by default. The animal speaks in italics under line 3. See [The Animal Companion](#the-animal-companion).
 
 ## Install
 
@@ -163,7 +169,7 @@ The companion picks a new line every 30 seconds, based on what's going on. When 
 | `dirty` | you have uncommitted changes | `{dirty}` |
 | `ahead` | you have commits you haven't pushed | `{ahead}` |
 | `behind` | upstream has commits you don't | `{behind}` |
-| `context` | the context window is 70% full or more | `{ctx}` |
+| `context` | the context window has reached the danger line (50% by default) | `{ctx}` |
 | `limits` | the 5-hour window is at 80%, or you're 15+ points ahead of the clock | `{limit}` |
 | `work` | any of the five above; also covers a soul that lacks one of them | |
 | `synced` | clean and even with upstream | |
@@ -181,18 +187,40 @@ Each soul in [`souls/`](souls/) is a markdown file with one bullet list per sect
 - origin moved {behind:commit} ahead. pull before you pounce.
 ```
 
-## Colour-Code Your Workspaces
+## Settings
 
-Each launch folder can shimmer in its own colours, so line 3 tells you at a glance which workspace you're in. I keep a personal workspace and a work one strictly apart. A PowerShell launcher starts Claude in each ([`examples/profile.ps1`](examples/profile.ps1)), and `ROOT_PALETTES` near the top of `statusline.js` paints them:
+Everything works without a settings file. To change the defaults, create `~/.claude/statusline.json` with only the keys you want; [`examples/statusline.json`](examples/statusline.json) has them all. Upgrades never touch this file, so edit it instead of `statusline.js`.
 
-```js
-const ROOT_PALETTES = [
-  { match: /^[a-z]:[\\/]+ai_workspace_personal/i, c1: [6, 182, 212],  c2: [74, 222, 128] }, // cyan → mint
-  { match: /^[a-z]:[\\/]+ai_workspace_appsilon/i, c1: [245, 158, 11], c2: [253, 230, 138] }, // amber → gold
-];
+```json
+{
+  "theme": "default",
+  "quiet": true,
+  "links": true,
+  "context": { "warn": 40, "danger": 50 },
+  "palettes": [
+    { "match": "ai_workspace_personal", "from": "#06b6d4", "to": "#4ade80" }
+  ],
+  "hide": []
+}
 ```
 
-Change the `match` patterns to your own folders and pick any two RGB colours. Add as many entries as you like; unmatched folders show in plain blue. The bar width and every segment colour are constants at the top of the same file.
+| Key | Default | What it does |
+|---|---|---|
+| `theme` | `"default"` | `"default"`, `"high-contrast"` (brighter greys and text), or `"colorblind"` (blue, yellow, and vermillion instead of green and red) |
+| `quiet` | `true` | dims what's healthy, like `✓ synced` or low usage, so only what needs attention stands out |
+| `links` | `true` | makes the remote and the PR clickable |
+| `context` | `40` / `50` | where the context bar turns orange (`warn`) and red with the `/compact` hint (`danger`) |
+| `palettes` | two built-in | workspace shimmer colours; see below |
+| `hide` | `[]` | segments to leave out: `effort`, `tokens`, `diff`, `limits`, `sync`, `remote`, `pr`, `companion` |
+| `barWidth` | `20` (`12` in narrow terminals) | context bar width, 4 to 40 cells |
+
+A bad value falls back to its default, so a typo never breaks the status line. Set the standard `NO_COLOR` environment variable to print plain text with no colour codes at all.
+
+### Colour-Code Your Workspaces
+
+Each launch folder can shimmer in its own colours, so line 3 tells you at a glance which workspace you're in. I keep a personal workspace and a work one strictly apart, and a PowerShell launcher starts Claude in each ([`examples/profile.ps1`](examples/profile.ps1)).
+
+Each palette entry has a `match`, which is any part of the launch folder's path (case and slash direction don't matter), and two hex colours, `from` and `to`. The first entry that matches wins; unmatched folders show in plain blue. Without a `palettes` key, two built-in entries colour `ai_workspace_personal` cyan → mint and `ai_workspace_appsilon` amber → gold. An empty list turns the shimmer off.
 
 ## How It Works
 
@@ -205,10 +233,10 @@ Claude Code runs a status-line command after each message and every `refreshInte
 | `cost.total_lines_added` / `_removed` | the `+/−` counter |
 | `rate_limits.five_hour` / `.seven_day` | usage, pace, and reset countdowns |
 | `workspace.project_dir` / `.current_dir` | launch folder versus the repo you're in |
-| `pr` | the PR badge |
+| `pr.number`, `pr.url`, `pr.review_state`, `pr.kind` | the PR badge and its link |
 | `git status`, `rev-parse`, `config`, `log` | branch, changes, ahead/behind, remote |
 
-The git reads use `--no-optional-locks` and short timeouts, and each session caches them for three seconds, so a burst of redraws runs git once. A render that Claude Code cancels exits on its own. Cache files live in `~/.claude/statusline-git.*`, and a new session clears the ones idle for a day.
+Links use the OSC 8 escape code that Claude Code passes through to the terminal. The git reads use `--no-optional-locks` and short timeouts, and each session caches them for three seconds, so a burst of redraws runs git once. A render that Claude Code cancels exits on its own. Cache files live in `~/.claude/statusline-git.*`, and a new session clears the ones idle for a day.
 
 ## Troubleshooting
 
@@ -216,6 +244,12 @@ The git reads use `--no-optional-locks` and short timeouts, and each session cac
 <summary>The colours show up as escape codes</summary>
 
 Your terminal isn't truecolor. Use Windows Terminal, iTerm2, WezTerm, Kitty, or the VS Code terminal.
+</details>
+
+<details>
+<summary>The repo and PR aren't clickable</summary>
+
+Your terminal needs OSC 8 hyperlink support: Windows Terminal, iTerm2, WezTerm, Kitty, and the VS Code terminal have it. Ctrl+click (Cmd+click on macOS) opens the link. If the text shows but won't click, Claude Code may not have detected hyperlink support; set `FORCE_HYPERLINK=1` before launching Claude Code. Over SSH or inside tmux, the escape codes can get stripped.
 </details>
 
 <details>
@@ -250,7 +284,7 @@ Releases follow [semantic versioning](https://semver.org) and are listed on the 
 
 [MIT](LICENSE). Use it, fork it, bend it to your setup. PRs welcome.
 
-- The context-bar gradient is ported from [getagentseal/codeburn](https://github.com/getagentseal/codeburn).
+- The context-bar gradient started as a port of [getagentseal/codeburn](https://github.com/getagentseal/codeburn).
 - The README visuals are drawn from the script's own output by [`assets/readme/source/`](assets/readme/source/).
 
 <p align="center"><sub>Made by <a href="https://github.com/risukisu">risu</a> · 🐿️</sub></p>

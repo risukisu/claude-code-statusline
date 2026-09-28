@@ -38,13 +38,13 @@ node --test test/lines.test.js
 
 `statusline.js` is one file in three layers:
 
-- **Top:** constants and file-path helpers (`VERSION`, `EMOJI`, `MODES`, timeouts, cache paths).
-- **Middle:** pure helpers, each exported with `module.exports.name = name` and unit-tested: `parseSoul`, `fillLine`, `pickCanned`, `renderLine4`, `loadConfig`, `gitCacheFresh`, `pruneStaleCaches`, and friends.
+- **Top:** constants and file-path helpers (`VERSION`, `EMOJI`, `MODES`, timeouts, cache paths), the soul parser, and the `THEMES` table.
+- **Middle:** pure helpers, each exported with `module.exports.name = name` and unit-tested: `parseSoul`, `fillLine`, `pickCanned`, `renderLine4`, `loadConfig`, `loadDashConfig`, `heatRGB`, `limitCells`, `gitCacheFresh`, `pruneStaleCaches`, and friends.
 - **Bottom:** `main()`, run when the file is executed directly. `--version` prints the version; any other argument exits silently, so a stale hook entry can never paste status lines into a conversation.
 
 ### The Render Path
 
-`main()` is the only execution path. Claude Code runs it after each message and every `refreshInterval` seconds. It reads the stdin JSON, loads the companion config and soul, reads git (from the per-session cache when it's under 3 seconds old), and prints the lines. A watchdog ends the process after 8 seconds, because Claude Code cancels a superseded render by orphaning it with stdin still open.
+`main()` is the only execution path. Claude Code runs it after each message and every `refreshInterval` seconds. It reads the stdin JSON, loads `~/.claude/statusline.json` and applies its theme, loads the companion config and soul, reads git (from the per-session cache when it's under 3 seconds old), and prints the lines. A watchdog ends the process after 8 seconds, because Claude Code cancels a superseded render by orphaning it with stdin still open.
 
 A session's first render (no cache file yet) sweeps `statusline-git.*` caches idle for a day and temp files older than a minute. The sweep matches that one filename pattern and nothing else.
 
@@ -55,8 +55,15 @@ A session's first render (no cache file yet) sweeps `statusline-git.*` caches id
 - **Notable states** (`context`, `limits`, `behind`, `dirty`, `ahead`): two slots in three rotate through the states that hold, plus the generic `work` lines, which also stand in for a state the soul has no section for. The third slot is `ambient`.
 - **Calm states** (`night`, `norepo`, `synced`, `branch`): when nothing notable holds, the calm states take turns with `ambient`.
 - `fillLine()` fills placeholders; a line whose placeholder has no value is dropped from the pool.
+- The `context` state starts at the context danger line (`ctxDanger`, 50% by default), the same point where the bar turns red.
 
 Everything is pure and synchronous, so a test pins `now` and gets the same line every time.
+
+## Colours, Themes, and Settings
+
+Every colour comes from one entry in `THEMES`. `setTheme()` turns the active theme into ready-made escape codes on `P` (`P.warn`, `P.dim`, `P.reset`, …), and render code only ever writes `${P.name}`. With `NO_COLOR` set, every entry on `P` is an empty string and the same templates print plain text. To add a theme, add an entry to `THEMES` with the same keys; `heat` holds the five context-bar anchors.
+
+`loadDashConfig()` reads `~/.claude/statusline.json` and validates each key on its own, so one bad value never discards the rest. A new setting needs a default in `DEFAULT_DASH`, a check in `loadDashConfig()`, a test in `dashconfig.test.js`, and a row in the README's settings table.
 
 ## Editing Souls
 
@@ -81,7 +88,7 @@ rules: one line, <= 80 chars, never mean, no emoji (the 🦊 is added)
 | `dirty` | uncommitted changes | `{dirty}` |
 | `ahead` | unpushed commits | `{ahead}` |
 | `behind` | upstream has new commits | `{behind}` |
-| `context` | context window at 70% or more | `{ctx}` |
+| `context` | context at the danger line (50% by default) | `{ctx}` |
 | `limits` | 5-hour window at 80%, or pace 15+ ahead of the clock | `{limit}` |
 | `synced` | clean and even with upstream | |
 | `branch` | not on `main`/`master` | `{branch}` |
@@ -105,9 +112,13 @@ rules: one line, <= 80 chars, never mean, no emoji (the 🦊 is added)
 | `sessionkey.test.js` | per-session cache isolation |
 | `watchdog.test.js` | an orphaned render exits on its own |
 | `flags.test.js` | `--version`, and silence for every other argument |
+| `dashconfig.test.js` | `statusline.json` loading and per-key fallbacks |
+| `heat.test.js` | the front-loaded context heat scale and the `/compact` hint |
+| `limitbar.test.js` | limit bars: fill, notch, overspend colouring |
+| `look.test.js` | themes, quiet mode, clickable links, `NO_COLOR`, `hide` |
 | `version.test.js` | `VERSION` matches the newest CHANGELOG entry |
 
-Tests that run the script set `CLAUDE_CONFIG_DIR` to a temp folder. **Do the same for any manual run** while you work on caching or cleanup code: a bare `node statusline.js` reads and tidies your real `~/.claude`.
+Tests that run the script set `CLAUDE_CONFIG_DIR` to a temp folder; `test/helpers.js` has a `render()` that does it for you, with an optional settings file, companion, and seeded git state. **Do the same for any manual run** while you work on caching or cleanup code: a bare `node statusline.js` reads and tidies your real `~/.claude`.
 
 If `characterization.test.js` fails, you changed what lines 1–3 print. Make sure you meant to, then update the assertion.
 

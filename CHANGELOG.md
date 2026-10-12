@@ -5,6 +5,17 @@ Notable changes to claude-code-statusline, newest first. The project follows
 segments, soul sections, or options without breaking an existing install, and a major
 release changes the soul format, the config file, or the install layout.
 
+## [1.2.0] — 2026-10-12
+
+### Added
+
+- **Agent model labels, an optional add-on.** `extras/agent-model-tag.js` is a PreToolUse
+  hook that makes Claude Code's agent lines show each subagent's model and exact version,
+  with a dot per model family: `🤖 Fix the tests [🟣 opus: Opus 5.5]`. It follows Claude
+  Code's documented order for picking a subagent's model and reads only model ids from
+  local transcripts. It is opt-in: the status line itself still needs no hook.
+  `agentTag.emoji` in `~/.claude/statusline.json` changes the dots. See the README.
+
 ## [1.1.0] — 2026-09-28
 
 ### Added
@@ -100,5 +111,6 @@ The first tagged release.
 - If `~/.claude/settings.json` has a `UserPromptSubmit` hook running
   `statusline.js --hook`, delete that entry. It does nothing now.
 
+[1.2.0]: https://github.com/risukisu/claude-code-statusline/releases/tag/v1.2.0
 [1.1.0]: https://github.com/risukisu/claude-code-statusline/releases/tag/v1.1.0
 [1.0.0]: https://github.com/risukisu/claude-code-statusline/releases/tag/v1.0.0

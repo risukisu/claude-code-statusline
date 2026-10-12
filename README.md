@@ -29,6 +29,7 @@ It reads the JSON Claude Code already pipes to a status-line command, plus a few
 - [Install](#install)
 - [The Animal Companion](#the-animal-companion)
 - [Settings](#settings)
+- [Optional: Agent Model Labels](#optional-agent-model-labels)
 - [How It Works](#how-it-works)
 - [Troubleshooting](#troubleshooting)
 - [Versions](#versions)
@@ -244,6 +245,7 @@ Everything works without a settings file. To change the defaults, create `~/.cla
 | `palettes` | two built-in | workspace shimmer colours; see below |
 | `hide` | `[]` | segments to leave out: `effort`, `tokens`, `diff`, `limits`, `sync`, `remote`, `pr`, `companion` |
 | `barWidth` | `20` (`12` in narrow terminals) | context bar width, 4 to 40 cells |
+| `agentTag` | — | the dots for the optional [agent model labels](#optional-agent-model-labels) |
 
 A bad value falls back to its default, so a typo never breaks the status line. Set the standard `NO_COLOR` environment variable to print plain text with no colour codes at all.
 
@@ -252,6 +254,54 @@ A bad value falls back to its default, so a typo never breaks the status line. S
 Each launch folder can shimmer in its own colours, so line 3 tells you at a glance which workspace you're in. I keep a personal workspace and a work one strictly apart, and a PowerShell launcher starts Claude in each ([`examples/profile.ps1`](examples/profile.ps1)).
 
 Each palette entry has a `match`, which is any part of the launch folder's path (case and slash direction don't matter), and two hex colours, `from` and `to`. The first entry that matches wins; unmatched folders show in plain blue. Without a `palettes` key, two built-in entries colour `ai_workspace_personal` cyan → mint and `ai_workspace_appsilon` amber → gold. An empty list turns the shimmer off.
+
+## Optional: Agent Model Labels
+
+Claude Code lists each subagent by its description but never says which model it runs on. The add-on [`extras/agent-model-tag.js`](extras/agent-model-tag.js) is a small hook that adds the model, its exact version, and a dot per model family:
+
+```text
+Agent "🤖 Plan the release [🟡 fable: Fable 5.1]" finished · 2m 10s
+Agent "🤖 Fix the tests [🟣 opus: Opus 5.5]" finished · 1m 1s
+Agent "🤖 Small edit [🔵 sonnet: Sonnet 5.5]" finished · 30s
+Agent "🤖 Read the docs [🟢 haiku: Haiku 5.5]" finished · 20s
+Agent "🤖 Explore the repo [⚪ inherit: Fable 5.1]" finished · 45s
+```
+
+It follows Claude Code's own order for picking a subagent's model ([docs](https://code.claude.com/docs/en/sub-agents#choose-a-model)): the model passed at launch, then the agent definition's `model:` (project agents, then your own, then plugin agents), then `CLAUDE_CODE_SUBAGENT_MODEL`, otherwise the session model (`inherit`). Forks always run on the session model. The exact version comes from the model ids in your local transcripts; until a model has run once in that project, the version comes from a built-in table and carries a `?`. The label shows what was asked for at launch; `/tasks` shows what a running agent really uses.
+
+It's opt-in and separate from the status line, which still needs no hook. To install it, copy the file:
+
+```bash
+mkdir -p ~/.claude/hooks && cp extras/agent-model-tag.js ~/.claude/hooks/
+```
+
+```powershell
+New-Item -ItemType Directory -Force "$HOME\.claude\hooks" | Out-Null
+Copy-Item extras\agent-model-tag.js "$HOME\.claude\hooks\"
+```
+
+Then merge this block into `~/.claude/settings.json`, keeping every hook already there (on Windows, use the full path with forward slashes), and restart Claude Code:
+
+```json
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Agent",
+        "hooks": [{ "type": "command", "command": "node ~/.claude/hooks/agent-model-tag.js", "timeout": 10 }]
+      }
+    ]
+  }
+}
+```
+
+To change a dot, add `agentTag` to `~/.claude/statusline.json`. The keys are `fable`, `opus`, `sonnet`, `haiku` and `other` (inherit, fork, and unknown models), and a bad value keeps the default:
+
+```json
+{ "agentTag": { "emoji": { "opus": "🧠", "other": "·" } } }
+```
+
+What it reads: agent definition files, `plugins/installed_plugins.json`, `statusline.json`, and the `model` field from the last 512 KB of local transcript files. It makes no network or model calls, writes nothing, and never blocks a launch: on any error the label just gets plainer.
 
 ## How It Works
 

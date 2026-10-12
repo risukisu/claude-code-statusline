@@ -11,7 +11,7 @@ A zero-dependency Node script that Claude Code runs as its status line. It print
 - **Line 3, git:** launch folder, current repo, branch, changes, ahead/behind, remote, PR
 - **Line 4, companion (optional):** a squirrel, fox, or turtle with hand-written lines picked by state
 
-**The rule that doesn't bend:** no dependencies, no network, no model calls, no transcript reads. A feature that needs any of those doesn't belong here.
+**The rule that doesn't bend:** no dependencies, no network, no model calls, no transcript reads. A feature that needs any of those doesn't belong here. One narrow exception: the opt-in add-on `extras/agent-model-tag.js` reads the `model` field of assistant messages from the tail of local transcript files and nothing else from them. It has no dependencies, no network and no model calls either, and `statusline.js` itself never reads a transcript.
 
 ## Setup
 
@@ -31,6 +31,7 @@ node --test test/lines.test.js
 | `commands/animal.md` | the `/animal` slash command Claude Code runs |
 | `settings.snippet.json` | the `statusLine` block users merge into `~/.claude/settings.json` |
 | `test/` | `node:test` suite, one file per concern |
+| `extras/agent-model-tag.js` | the optional agent-label hook (PreToolUse on `Agent`), a separate program; tested in `test/agent-model-tag.test.js` |
 | `examples/` | a sample stdin payload and the PowerShell workspace launchers |
 | `assets/readme/` | README visuals, generated from real renders by `assets/readme/source/` |
 

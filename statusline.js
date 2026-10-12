@@ -38,7 +38,7 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 
-const VERSION = "1.1.0";
+const VERSION = "1.2.0";
 const EMOJI = { squirrel: "🐿️", fox: "🦊", turtle: "🐢" };
 const ANIMALS = ["squirrel", "fox", "turtle"];
 const MODES = ["off", "canned"];

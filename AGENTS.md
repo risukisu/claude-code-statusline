@@ -23,7 +23,7 @@ Create `~/.claude/`, `~/.claude/souls/`, and `~/.claude/commands/` if they don't
 2. Copy **every** file in `souls/` (`squirrel.md`, `fox.md`, `turtle.md`) → `~/.claude/souls/`
 3. Copy `commands/animal.md` → `~/.claude/commands/animal.md`  ← **without this, `/animal` will not exist**
 4. **Merge** `settings.snippet.json` into `~/.claude/settings.json`:
-   - Add the `statusLine` block. **Do not add any hook** — this tool needs none.
+   - Add the `statusLine` block. **Do not add any hook** — the status line needs none. The one exception is the optional agent-label hook below, and only when the user asks for it.
    - **MERGE — do not overwrite.** Preserve every existing key. The result must be valid JSON.
    - On **Windows**, replace `YOUR_USERNAME` with the real username and keep forward slashes, e.g. `node C:/Users/<username>/.claude/statusline.js`.
    - If an older install left a `hooks.UserPromptSubmit` entry running `statusline.js --hook`, remove that one entry (leave the user's other hooks alone). It does nothing now.
@@ -37,6 +37,18 @@ Create `~/.claude/`, `~/.claude/souls/`, and `~/.claude/commands/` if they don't
 - Confirm `~/.claude/settings.json` is valid JSON and contains `statusLine`.
 
 If any check fails, fix it before telling the user it's done.
+
+## Optional: agent model labels — only when the user asks
+The add-on makes Claude Code's agent lines show each subagent's model, e.g. `🤖 Fix the tests [🟣 opus: Opus 5.5]`. Skip this section unless the user asked for it.
+
+1. Copy `extras/agent-model-tag.js` → `~/.claude/hooks/agent-model-tag.js` (create `~/.claude/hooks/` if it doesn't exist).
+2. **Merge** this hook into `~/.claude/settings.json`. Keep every existing hook; if `hooks.PreToolUse` already exists, add this entry to its list:
+   ```json
+   { "hooks": { "PreToolUse": [ { "matcher": "Agent", "hooks": [ { "type": "command", "command": "node ~/.claude/hooks/agent-model-tag.js", "timeout": 10 } ] } ] } }
+   ```
+   On **Windows**, use the full path with forward slashes, e.g. `node C:/Users/<username>/.claude/hooks/agent-model-tag.js`.
+3. Verify: `printf '{"tool_name":"Agent","tool_input":{"description":"Job","model":"opus"}}' | node ~/.claude/hooks/agent-model-tag.js` prints JSON whose `description` is `🤖 Job [🟣 opus: Opus 5.5?]`. The `?` goes away once an Opus subagent has run in that project.
+4. Tell the user to restart Claude Code; hooks load at session start.
 
 ## Important notes
 - The companion is **off by default**. Both modes (`off`, `canned`) make **zero** model calls and read no transcript: every line comes from the soul files.
